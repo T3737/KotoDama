@@ -2,23 +2,26 @@
 
 import { useEffect, useRef, useState } from "react";
 
-// ─── SPRITESHEET LAYOUT ────────────────────────────────────────────────────
-// File: /public/game_sprites.png  (600x560px)
-// Cell: 120w x 140h
-// Row 0 (y=0):   Player walk  – 4 frames
-// Row 1 (y=140): Player attack– 4 frames
-// Row 2 (y=280): Enemy walk   – 5 frames
-// Row 3 (y=420): Enemy attack – 5 frames
-// ───────────────────────────────────────────────────────────────────────────
+// ─── SPRITESHEET: /public/game_sprites.png (500x720px) ───────────────────
+// Cell: 100w x 120h
+// Row 0 (y=0):   player idle   – 4 frames
+// Row 1 (y=120): player walk   – 5 frames
+// Row 2 (y=240): player attack – 3 frames
+// Row 3 (y=360): player jump   – 4 frames
+// Row 4 (y=480): enemy idle    – 4 frames
+// Row 5 (y=600): enemy hit     – 3 frames
+// ─────────────────────────────────────────────────────────────────────────
 
-const CELL_W = 120;
-const CELL_H = 140;
+const CELL_W = 100;
+const CELL_H = 120;
 
 const ANIM = {
-  PLAYER_WALK:   { row: 0, frames: 4, fps: 10 },
-  PLAYER_ATTACK: { row: 1, frames: 4, fps: 18 },
-  ENEMY_WALK:    { row: 2, frames: 5, fps: 8  },
-  ENEMY_ATTACK:  { row: 3, frames: 5, fps: 12 },
+  PLAYER_IDLE:   { row: 0, frames: 4, fps: 6  },
+  PLAYER_WALK:   { row: 1, frames: 5, fps: 10 },
+  PLAYER_ATTACK: { row: 2, frames: 3, fps: 14 },
+  PLAYER_JUMP:   { row: 3, frames: 4, fps: 10 },
+  ENEMY_IDLE:    { row: 4, frames: 4, fps: 6  },
+  ENEMY_HIT:     { row: 5, frames: 3, fps: 12 },
 };
 
 export default function Home() {
@@ -34,16 +37,21 @@ export default function Home() {
     canvas.width = 1200;
     canvas.height = 700;
 
-    // ── Load spritesheet ──
-    const sprites = new Image();
-    sprites.src = "/game_sprites.png";
+    // ── Load assets ──
+    const spriteSheet = new Image();
+    spriteSheet.src = "/game_sprites.png";
     let spritesLoaded = false;
-    sprites.onload = () => { spritesLoaded = true; };
+    spriteSheet.onload = () => { spritesLoaded = true; };
+
+    const bgImage = new Image();
+    bgImage.src = "/game_bg.png";
+    let bgLoaded = false;
+    bgImage.onload = () => { bgLoaded = true; };
 
     const gravity = 0.7;
     const keys = {};
 
-    // ── Animation state helpers ──
+    // ── Anim helpers ──
     function makeAnim(def) {
       return { def, frame: 0, timer: 0, done: false };
     }
@@ -59,6 +67,14 @@ export default function Home() {
         }
       }
     }
+    function loopAnim(anim, dt) {
+      anim.timer += dt;
+      const interval = 1000 / anim.def.fps;
+      if (anim.timer >= interval) {
+        anim.timer -= interval;
+        anim.frame = (anim.frame + 1) % anim.def.frames;
+      }
+    }
     function resetAnim(anim, def) {
       anim.def = def;
       anim.frame = 0;
@@ -70,15 +86,16 @@ export default function Home() {
       ctx.save();
       ctx.globalAlpha = alpha;
       if (flipX) {
+        ctx.translate(x + w, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(
-          sprites,
+          spriteSheet,
           anim.frame * CELL_W, anim.def.row * CELL_H, CELL_W, CELL_H,
-          -(x + w), y, w, h
+          0, y, w, h
         );
       } else {
         ctx.drawImage(
-          sprites,
+          spriteSheet,
           anim.frame * CELL_W, anim.def.row * CELL_H, CELL_W, CELL_H,
           x, y, w, h
         );
@@ -88,43 +105,56 @@ export default function Home() {
 
     // ── Player ──
     const player = {
-      x: 100, y: 100,
-      width: 40, height: 56,
+      x: 80, y: 500,
+      width: 38, height: 58,
       velX: 0, velY: 0,
-      speed: 5, jumpPower: -14,
+      speed: 5, jumpPower: -15,
       grounded: false,
-      facing: 1,          // 1=right, -1=left
+      facing: 1,
       attacking: false,
       attackCooldown: 0,
       jumps: 0,
       invincible: 0,
-      anim: makeAnim(ANIM.PLAYER_WALK),
+      anim: makeAnim(ANIM.PLAYER_IDLE),
     };
 
-    // ── World ──
     const camera = { x: 0 };
 
+    // Rock-style platforms drawn with canvas (mossy stone look)
     const platforms = [
-      { x: 0,    y: 650, width: 2200, height: 50 },
-      { x: 300,  y: 220, width: 200,  height: 20 },
-      { x: 650,  y: 430, width: 200,  height: 20 },
-      { x: 1050, y: 330, width: 200,  height: 20 },
-      { x: 1450, y: 500, width: 250,  height: 20 },
+      { x: 0,    y: 640, width: 2400, height: 60 },  // ground
+      { x: 280,  y: 500, width: 220,  height: 28 },  // low left
+      { x: 620,  y: 400, width: 200,  height: 28 },  // mid
+      { x: 1020, y: 300, width: 220,  height: 28 },  // high right
+      { x: 1420, y: 470, width: 260,  height: 28 },  // far right
     ];
 
     const enemies = [
       {
-        x: 900, y: 610, width: 40, height: 48,
+        x: 850, y: 600, width: 44, height: 44,
         dir: 1, alive: true,
-        anim: makeAnim(ANIM.ENEMY_WALK),
-        attackAnim: makeAnim(ANIM.ENEMY_ATTACK),
-        isAttacking: false,
+        anim: makeAnim(ANIM.ENEMY_IDLE),
+        hitAnim: makeAnim(ANIM.ENEMY_HIT),
+        isHit: false,
+        hitTimer: 0,
+        attackTimer: 0,
+      },
+      {
+        x: 1100, y: 260, width: 44, height: 44,
+        dir: -1, alive: true,
+        anim: makeAnim(ANIM.ENEMY_IDLE),
+        hitAnim: makeAnim(ANIM.ENEMY_HIT),
+        isHit: false,
+        hitTimer: 0,
         attackTimer: 0,
       },
     ];
 
-    const upgrade = { x: 1120, y: 280, width: 30, height: 30, collected: false, bob: 0 };
-    const lockedGate = { x: 1700, y: 500, width: 60, height: 150 };
+    const upgrade = {
+      x: 1080, y: 245, width: 28, height: 28,
+      collected: false, bob: 0,
+    };
+    const lockedGate = { x: 1750, y: 480, width: 60, height: 160 };
 
     // ── Particles ──
     const particles = [];
@@ -143,25 +173,25 @@ export default function Home() {
       }
     }
 
-    // ── Collision helpers ──
+    // ── Collision ──
     function rectsCollide(a, b) {
       return a.x < b.x + b.width && a.x + a.width > b.x &&
              a.y < b.y + b.height && a.y + a.height > b.y;
     }
 
     function resolvePlatformsVertical(obj) {
+      obj.grounded = false;
       for (const p of platforms) {
         if (
           obj.x < p.x + p.width && obj.x + obj.width > p.x &&
           obj.y + obj.height >= p.y &&
-          obj.y + obj.height <= p.y + p.height + Math.abs(obj.velY) + 2
+          obj.y + obj.height <= p.y + p.height + Math.abs(obj.velY) + 2 &&
+          obj.velY >= 0
         ) {
-          if (obj.velY >= 0) {
-            obj.y = p.y - obj.height;
-            obj.velY = 0;
-            obj.grounded = true;
-            obj.jumps = 0;
-          }
+          obj.y = p.y - obj.height;
+          obj.velY = 0;
+          obj.grounded = true;
+          obj.jumps = 0;
         }
         // ceiling
         if (
@@ -175,18 +205,50 @@ export default function Home() {
     }
 
     function attackHitEnemies() {
-      const swordHitbox = {
-        x: player.facing === 1 ? player.x + player.width : player.x - 50,
-        y: player.y + 10,
-        width: 50, height: 30,
+      const reach = 55;
+      const hitbox = {
+        x: player.facing === 1 ? player.x + player.width : player.x - reach,
+        y: player.y + 8,
+        width: reach,
+        height: 32,
       };
       for (const enemy of enemies) {
         if (!enemy.alive) continue;
-        if (rectsCollide(swordHitbox, enemy)) {
+        if (rectsCollide(hitbox, enemy)) {
           enemy.alive = false;
-          spawnParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, "#ff4444", 12);
+          spawnParticles(
+            enemy.x + enemy.width / 2,
+            enemy.y + enemy.height / 2,
+            "#55ff55", 14
+          );
         }
       }
+    }
+
+    // ── Draw rock platform ──
+    function drawPlatform(p) {
+      // Base stone
+      ctx.fillStyle = "#4a4a52";
+      ctx.fillRect(p.x, p.y, p.width, p.height);
+      // Darker bottom
+      ctx.fillStyle = "#2e2e35";
+      ctx.fillRect(p.x, p.y + p.height - 8, p.width, 8);
+      // Top moss strip
+      ctx.fillStyle = "#3a6b2a";
+      ctx.fillRect(p.x, p.y, p.width, 5);
+      // Lighter moss highlights
+      ctx.fillStyle = "#4e8c38";
+      for (let mx = p.x + 4; mx < p.x + p.width - 4; mx += 16) {
+        ctx.fillRect(mx, p.y, 8, 3);
+      }
+      // Stone crack lines
+      ctx.fillStyle = "#38383f";
+      for (let cx = p.x + 20; cx < p.x + p.width - 10; cx += 30) {
+        ctx.fillRect(cx, p.y + 7, 2, p.height - 10);
+      }
+      // Top highlight edge
+      ctx.fillStyle = "rgba(200,200,180,0.18)";
+      ctx.fillRect(p.x, p.y, p.width, 2);
     }
 
     // ── Main loop ──
@@ -194,39 +256,38 @@ export default function Home() {
     let lastTime = performance.now();
 
     function update(now) {
-      const dt = Math.min(now - lastTime, 50); // cap at 50ms
+      const dt = Math.min(now - lastTime, 50);
       lastTime = now;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // ── Player input ──
+      // ── Input ──
       player.velX = 0;
       const moving = keys["a"] || keys["ArrowLeft"] || keys["d"] || keys["ArrowRight"];
-
       if (keys["a"] || keys["ArrowLeft"]) { player.velX = -player.speed; player.facing = -1; }
       if (keys["d"] || keys["ArrowRight"]) { player.velX =  player.speed; player.facing =  1; }
 
-      // ── Attack cooldown ──
       if (player.attackCooldown > 0) player.attackCooldown -= dt;
 
-      // ── Player animation state machine ──
+      // ── Player anim state machine ──
       if (player.attacking) {
         tickAnim(player.anim, dt);
         if (player.anim.done) {
           player.attacking = false;
-          resetAnim(player.anim, ANIM.PLAYER_WALK);
+          resetAnim(player.anim, ANIM.PLAYER_IDLE);
         }
+      } else if (!player.grounded) {
+        if (player.anim.def !== ANIM.PLAYER_JUMP) resetAnim(player.anim, ANIM.PLAYER_JUMP);
+        tickAnim(player.anim, dt);
+      } else if (moving) {
+        if (player.anim.def !== ANIM.PLAYER_WALK) resetAnim(player.anim, ANIM.PLAYER_WALK);
+        loopAnim(player.anim, dt);
       } else {
-        if (moving || !player.grounded) {
-          if (player.anim.def !== ANIM.PLAYER_WALK) resetAnim(player.anim, ANIM.PLAYER_WALK);
-          tickAnim(player.anim, dt);
-        } else {
-          // idle: hold frame 0 of walk
-          player.anim.frame = 0;
-        }
+        if (player.anim.def !== ANIM.PLAYER_IDLE) resetAnim(player.anim, ANIM.PLAYER_IDLE);
+        loopAnim(player.anim, dt);
       }
 
-      // ── Horizontal movement ──
+      // ── Horizontal ──
       player.x += player.velX;
       for (const p of platforms) {
         if (rectsCollide(player, p)) {
@@ -234,11 +295,11 @@ export default function Home() {
           else if (player.velX < 0) player.x = p.x + p.width;
         }
       }
+      player.x = Math.max(0, player.x);
 
-      // ── Vertical movement ──
+      // ── Vertical ──
       player.velY += gravity;
       player.y += player.velY;
-      player.grounded = false;
       resolvePlatformsVertical(player);
 
       // ── Gate ──
@@ -252,212 +313,226 @@ export default function Home() {
       for (const enemy of enemies) {
         if (!enemy.alive) continue;
 
-        enemy.x += enemy.dir * 2;
-        if (enemy.x > 1050 || enemy.x < 750) enemy.dir *= -1;
+        enemy.x += enemy.dir * 1.5;
 
-        // enemy attack anim timer
-        if (enemy.isAttacking) {
-          tickAnim(enemy.attackAnim, dt);
-          if (enemy.attackAnim.done) {
-            enemy.isAttacking = false;
-            resetAnim(enemy.anim, ANIM.ENEMY_WALK);
+        // Patrol bounds per enemy
+        const patrolMin = enemy === enemies[0] ? 700 : 1020;
+        const patrolMax = enemy === enemies[0] ? 1000 : 1240;
+        if (enemy.x > patrolMax || enemy.x < patrolMin) enemy.dir *= -1;
+
+        if (enemy.isHit) {
+          tickAnim(enemy.hitAnim, dt);
+          if (enemy.hitAnim.done) {
+            enemy.isHit = false;
+            resetAnim(enemy.anim, ANIM.ENEMY_IDLE);
           }
         } else {
-          tickAnim(enemy.anim, dt);
-          // trigger attack if near player
-          const dist = Math.abs(enemy.x - player.x);
-          enemy.attackTimer -= dt;
-          if (dist < 60 && enemy.attackTimer <= 0) {
-            enemy.isAttacking = true;
-            resetAnim(enemy.attackAnim, ANIM.ENEMY_ATTACK);
-            enemy.attackTimer = 1200;
-          }
+          loopAnim(enemy.anim, dt);
         }
 
-        if (rectsCollide(player, enemy) && player.invincible <= 0) {
-          const newHealth = Math.max(healthRef.current - 1, 0);
-          healthRef.current = newHealth;
-          setHealth(newHealth);
+        enemy.attackTimer -= dt;
+        if (rectsCollide(player, enemy) && player.invincible <= 0 && enemy.attackTimer <= 0) {
+          const newHP = Math.max(healthRef.current - 1, 0);
+          healthRef.current = newHP;
+          setHealth(newHP);
           player.invincible = 90;
-          player.velX = player.facing * -4;
           player.velY = -7;
-          spawnParticles(player.x + player.width / 2, player.y, "#ff8800", 8);
+          player.velX = player.facing * -5;
+          enemy.attackTimer = 1000;
+          spawnParticles(player.x + player.width / 2, player.y, "#ff6600", 10);
         }
       }
-
       if (player.invincible > 0) player.invincible--;
 
       // ── Upgrade ──
-      upgrade.bob = Math.sin(Date.now() / 400) * 5;
-      if (rectsCollide(player, upgrade) && !upgrade.collected) {
+      upgrade.bob = Math.sin(Date.now() / 380) * 5;
+      if (!upgrade.collected && rectsCollide(player, upgrade)) {
         upgrade.collected = true;
         doubleJumpRef.current = true;
         setDoubleJumpUnlocked(true);
-        spawnParticles(upgrade.x + 15, upgrade.y + 15, "#00ffff", 16);
+        spawnParticles(upgrade.x + 14, upgrade.y + 14, "#00eeff", 18);
       }
 
       // ── Particles ──
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
-        p.x += p.vx;
-        p.y += p.vy;
+        p.x += p.vx; p.y += p.vy;
         p.vy += 0.15;
-        p.life -= 0.035;
+        p.life -= 0.03;
         if (p.life <= 0) particles.splice(i, 1);
       }
 
       // ── Camera ──
-      camera.x = Math.max(0, player.x - 300);
+      camera.x = Math.max(0, Math.min(player.x - 300, 2400 - canvas.width));
 
-      // ═══════════════════════════════════════════
+      // ════════════════════════════════
       //  DRAW
-      // ═══════════════════════════════════════════
+      // ════════════════════════════════
       ctx.save();
       ctx.translate(-camera.x, 0);
 
-      // Background gradient
-      const bg = ctx.createLinearGradient(camera.x, 0, camera.x, canvas.height);
-      bg.addColorStop(0, "#0a0a1a");
-      bg.addColorStop(1, "#1a1020");
-      ctx.fillStyle = bg;
-      ctx.fillRect(camera.x, 0, canvas.width, canvas.height);
-
-      // Background stars
-      ctx.fillStyle = "rgba(255,255,255,0.4)";
-      for (let i = 0; i < 60; i++) {
-        const sx = ((i * 337 + camera.x * 0.1) % 2200);
-        const sy = (i * 197) % 640;
-        ctx.fillRect(sx, sy, 1.5, 1.5);
+      // ── Background (parallax: scroll at 40% speed) ──
+      if (bgLoaded) {
+        const bgX = -camera.x * 0.4;
+        // tile bg horizontally if needed
+        const bgW = bgImage.width;
+        const bgH = bgImage.height;
+        const startTile = Math.floor(-bgX / bgW);
+        const endTile = Math.ceil((canvas.width - bgX) / bgW) + startTile;
+        for (let t = startTile; t <= endTile; t++) {
+          ctx.drawImage(bgImage, bgX + t * bgW + camera.x, 0, bgW, canvas.height);
+        }
+      } else {
+        // Fallback gradient
+        const bg = ctx.createLinearGradient(camera.x, 0, camera.x, canvas.height);
+        bg.addColorStop(0, "#1a1a2e");
+        bg.addColorStop(1, "#16213e");
+        ctx.fillStyle = bg;
+        ctx.fillRect(camera.x, 0, canvas.width, canvas.height);
       }
 
-      // Platforms
-      for (const p of platforms) {
-        const grad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.height);
-        grad.addColorStop(0, "#5a5a7a");
-        grad.addColorStop(1, "#2a2a3a");
-        ctx.fillStyle = grad;
-        ctx.fillRect(p.x, p.y, p.width, p.height);
-        // top edge highlight
-        ctx.fillStyle = "rgba(150,150,200,0.4)";
-        ctx.fillRect(p.x, p.y, p.width, 3);
-      }
+      // ── Platforms (mossy rock style) ──
+      for (const p of platforms) drawPlatform(p);
 
-      // Gate
-      const gateColor = doubleJumpRef.current ? "#00cc44" : "#880000";
-      ctx.fillStyle = gateColor;
+      // ── Gate ──
+      const gateOpen = doubleJumpRef.current;
+      ctx.fillStyle = gateOpen ? "#1a6b3a" : "#6b1a1a";
       ctx.fillRect(lockedGate.x, lockedGate.y, lockedGate.width, lockedGate.height);
-      ctx.fillStyle = "rgba(255,255,255,0.15)";
-      ctx.fillRect(lockedGate.x + 5, lockedGate.y + 5, 10, lockedGate.height - 10);
-      ctx.fillStyle = doubleJumpRef.current ? "#aaffcc" : "#ffaaaa";
-      ctx.font = "bold 11px monospace";
+      // Gate bars
+      ctx.fillStyle = gateOpen ? "#2aaa5a" : "#aa2a2a";
+      for (let bx = lockedGate.x + 8; bx < lockedGate.x + lockedGate.width - 4; bx += 14) {
+        ctx.fillRect(bx, lockedGate.y, 5, lockedGate.height);
+      }
+      ctx.fillStyle = "rgba(255,255,255,0.7)";
+      ctx.font = "bold 10px monospace";
       ctx.textAlign = "center";
-      ctx.fillText(doubleJumpRef.current ? "OPEN" : "LOCK", lockedGate.x + 30, lockedGate.y + lockedGate.height / 2);
+      ctx.fillText(gateOpen ? "OPEN" : "LOCK", lockedGate.x + 30, lockedGate.y + lockedGate.height / 2 + 4);
       ctx.textAlign = "left";
 
-      // Upgrade orb
+      // ── Upgrade orb ──
       if (!upgrade.collected) {
-        const orbY = upgrade.y + upgrade.bob;
+        const oy = upgrade.y + upgrade.bob;
+        // Glow
         const glow = ctx.createRadialGradient(
-          upgrade.x + 15, orbY + 15, 2,
-          upgrade.x + 15, orbY + 15, 20
+          upgrade.x + 14, oy + 14, 2,
+          upgrade.x + 14, oy + 14, 22
         );
-        glow.addColorStop(0, "rgba(0,255,255,0.6)");
-        glow.addColorStop(1, "rgba(0,255,255,0)");
+        glow.addColorStop(0, "rgba(0,220,255,0.7)");
+        glow.addColorStop(1, "rgba(0,220,255,0)");
         ctx.fillStyle = glow;
-        ctx.fillRect(upgrade.x - 10, orbY - 10, 60, 60);
-        ctx.fillStyle = "cyan";
+        ctx.fillRect(upgrade.x - 10, oy - 10, 56, 56);
+        ctx.fillStyle = "#00ddff";
         ctx.beginPath();
-        ctx.arc(upgrade.x + 15, orbY + 15, 12, 0, Math.PI * 2);
+        ctx.arc(upgrade.x + 14, oy + 14, 11, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = "white";
-        ctx.font = "bold 14px monospace";
+        ctx.font = "bold 10px monospace";
         ctx.textAlign = "center";
-        ctx.fillText("2J", upgrade.x + 15, orbY + 20);
+        ctx.fillText("2↑", upgrade.x + 14, oy + 18);
         ctx.textAlign = "left";
       }
 
-      // Enemies
+      // ── Enemies ──
       for (const enemy of enemies) {
         if (!enemy.alive) continue;
-        const curAnim = enemy.isAttacking ? enemy.attackAnim : enemy.anim;
-        const flipEnemy = enemy.dir < 0;
-        drawSprite(curAnim, enemy.x - 30, enemy.y - 48, CELL_W * 0.8, CELL_H * 0.8, flipEnemy);
+        const curAnim = enemy.isHit ? enemy.hitAnim : enemy.anim;
+        const flip = enemy.dir < 0;
+        const sw = CELL_W * 0.85;
+        const sh = CELL_H * 0.85;
+        drawSprite(curAnim, enemy.x - sw * 0.3, enemy.y - sh * 0.5, sw, sh, flip);
       }
 
-      // Player
+      // ── Player ──
       const flipPlayer = player.facing === -1;
-      const playerAlpha = player.invincible > 0
-        ? (Math.floor(player.invincible / 5) % 2 === 0 ? 0.4 : 1.0)
+      const pAlpha = player.invincible > 0
+        ? (Math.floor(player.invincible / 5) % 2 === 0 ? 0.35 : 1.0)
         : 1.0;
+      const sw = CELL_W * 1.1;
+      const sh = CELL_H * 1.1;
+      const sx = player.x + (player.width - sw) / 2;
+      const sy = player.y + player.height - sh;
+      drawSprite(player.anim, sx, sy, sw, sh, flipPlayer, pAlpha);
 
-      // draw sprite centered on hitbox
-      const spriteW = CELL_W * 0.9;
-      const spriteH = CELL_H * 0.9;
-      const spriteX = player.x + (player.width - spriteW) / 2;
-      const spriteY = player.y + player.height - spriteH;
-      drawSprite(player.anim, spriteX, spriteY, spriteW, spriteH, flipPlayer, playerAlpha);
-
-      // Particles
+      // ── Particles ──
       for (const p of particles) {
+        ctx.save();
         ctx.globalAlpha = p.life;
         ctx.fillStyle = p.color;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
         ctx.fill();
+        ctx.restore();
       }
-      ctx.globalAlpha = 1;
 
-      ctx.restore();
+      ctx.restore(); // end camera transform
 
-      // ─── HUD ───
-      // Health bar
-      const barW = 150, barH = 20;
-      const barX = 20, barY = 20;
-      ctx.fillStyle = "#333";
-      ctx.fillRect(barX, barY, barW, barH);
+      // ════════════════════════════════
+      //  HUD (no camera transform)
+      // ════════════════════════════════
+
+      // HP bar background
+      const barW = 160, barH = 22;
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(16, 16, barW + 4, barH + 4);
+      ctx.fillStyle = "#222";
+      ctx.fillRect(18, 18, barW, barH);
       const hpRatio = healthRef.current / 5;
       const barColor = hpRatio > 0.6 ? "#44dd44" : hpRatio > 0.3 ? "#ddaa00" : "#dd2222";
       ctx.fillStyle = barColor;
-      ctx.fillRect(barX, barY, barW * hpRatio, barH);
+      ctx.fillRect(18, 18, barW * hpRatio, barH);
       ctx.strokeStyle = "#888";
       ctx.lineWidth = 1;
-      ctx.strokeRect(barX, barY, barW, barH);
+      ctx.strokeRect(18, 18, barW, barH);
       ctx.fillStyle = "white";
       ctx.font = "bold 13px monospace";
-      ctx.fillText(`HP ${healthRef.current}/5`, barX + 4, barY + 14);
+      ctx.fillText(`HP  ${healthRef.current}/5`, 24, 33);
 
       // Double jump badge
-      ctx.fillStyle = doubleJumpRef.current ? "rgba(0,200,100,0.85)" : "rgba(80,80,80,0.85)";
-      ctx.fillRect(20, 50, 160, 24);
+      ctx.fillStyle = doubleJumpRef.current
+        ? "rgba(0,180,80,0.88)"
+        : "rgba(60,60,60,0.80)";
+      ctx.fillRect(16, 48, 172, 22);
       ctx.fillStyle = "white";
-      ctx.font = "13px monospace";
-      ctx.fillText(`2x JUMP: ${doubleJumpRef.current ? "UNLOCKED ✓" : "locked"}`, 26, 66);
+      ctx.font = "12px monospace";
+      ctx.fillText(
+        `2x JUMP: ${doubleJumpRef.current ? "UNLOCKED ✓" : "find the orb"}`,
+        22, 63
+      );
 
-      // Controls hint
-      ctx.fillStyle = "rgba(255,255,255,0.3)";
-      ctx.font = "11px monospace";
-      ctx.fillText("WASD/↑ move+jump  J=attack", 20, canvas.height - 12);
+      // Controls panel bottom-left
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      ctx.fillRect(12, canvas.height - 52, 290, 40);
+      ctx.fillStyle = "rgba(255,255,255,0.6)";
+      ctx.font = "12px monospace";
+      ctx.fillText("WASD / ← →  move    W / ↑  jump", 18, canvas.height - 34);
+      ctx.fillStyle = "#ffdd44";
+      ctx.fillText("[ F ]  attack", 18, canvas.height - 17);
 
       animId = requestAnimationFrame(update);
     }
 
+    // ── Input ──
     function keyDown(e) {
       keys[e.key] = true;
 
-      if (e.key === "w" || e.key === "ArrowUp" || e.key === " ") {
+      if (["w","ArrowUp"," "].includes(e.key)) {
         const maxJumps = doubleJumpRef.current ? 2 : 1;
         if (player.jumps < maxJumps) {
           player.velY = player.jumpPower;
           player.jumps++;
-          e.preventDefault();
+          if (!player.grounded) resetAnim(player.anim, ANIM.PLAYER_JUMP);
         }
+        if (e.key === " ") e.preventDefault();
       }
 
-      if (e.key === "j" && !player.attacking && player.attackCooldown <= 0) {
-        player.attacking = true;
-        player.attackCooldown = 300;
-        resetAnim(player.anim, ANIM.PLAYER_ATTACK);
-        attackHitEnemies();
+      if (e.key === "f" || e.key === "F") {
+        if (!player.attacking && player.attackCooldown <= 0) {
+          player.attacking = true;
+          player.attackCooldown = 320;
+          resetAnim(player.anim, ANIM.PLAYER_ATTACK);
+          // Hit check on frame 1 (slight delay feels better)
+          setTimeout(attackHitEnemies, 80);
+        }
       }
     }
 
@@ -475,8 +550,11 @@ export default function Home() {
   }, []);
 
   return (
-    <main className="w-screen h-screen bg-black flex flex-col items-center justify-center overflow-hidden">
-      <canvas ref={canvasRef} className="border border-zinc-800 rounded-xl shadow-2xl" />
+    <main className="w-screen h-screen bg-black flex items-center justify-center overflow-hidden">
+      <canvas
+        ref={canvasRef}
+        className="border border-zinc-800 rounded-xl shadow-2xl"
+      />
     </main>
   );
 }
