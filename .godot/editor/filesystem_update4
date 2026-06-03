@@ -1,0 +1,7 @@
+res://scripts/Camera.gd
+res://scripts/House.gd
+res://scripts/Interactable.gd
+res://scripts/Player.gd
+res://scripts/Sign.gd
+res://scripts/TileMapGen.gd
+res://scripts/World.gd
