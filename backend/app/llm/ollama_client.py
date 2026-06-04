@@ -3,6 +3,7 @@ from typing import Any
 import httpx
 
 
+
 class OllamaError(Exception):
     """Raised when the local Ollama API cannot provide a chat response."""
 
