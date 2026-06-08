@@ -7,21 +7,34 @@
 [ext_resource type="Script" uid="uid://dsnxafc6tktcc" path="res://scripts/House.gd" id="5"]
 [ext_resource type="Script" uid="uid://bw3nqr0vqr4p1" path="res://scripts/Sign.gd" id="6"]
 [ext_resource type="PackedScene" uid="uid://minimap" path="res://scenes/Minimap.tscn" id="7"]
-[ext_resource type="PackedScene" path="res://scenes/InventoryUI.tscn" id="8"]
-[ext_resource type="PackedScene" path="res://scenes/Item.tscn"        id="9"]
+[ext_resource type="PackedScene" uid="uid://inventoryui" path="res://scenes/InventoryUI.tscn" id="8"]
+[ext_resource type="PackedScene" uid="uid://item" path="res://scenes/Item.tscn" id="9"]
+[ext_resource type="Texture2D" path="res://assets/house.png" id="11"]
+
+
+[sub_resource type="CompressedTexture2D" id="CompressedTexture2D_pdh0q"]
+load_path = "res://.godot/imported/grass.png-a207bda4a53e32c7645a41ec6d1c234e.ctex"
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_pdh0q"]
+texture = SubResource("CompressedTexture2D_pdh0q")
+texture_region_size = Vector2i(64, 64)
+0:0/0 = 0
 
 [sub_resource type="TileSet" id="TileSet_1"]
-
-[sub_resource type="RectangleShape2D" id="Shape_house"]
-size = Vector2(48, 16)
+tile_size = Vector2i(64, 64)
+sources/0 = SubResource("TileSetAtlasSource_pdh0q")
 
 [sub_resource type="RectangleShape2D" id="Shape_sign"]
 size = Vector2(16, 16)
+
+[sub_resource type="RectangleShape2D" id="Shape_house"]
+size = Vector2(48, 16)
 
 [node name="World" type="Node2D" unique_id=1482259864]
 script = ExtResource("2")
 
 [node name="TerrainMap" type="TileMap" parent="." unique_id=1240666552]
+position = Vector2(-1, -1)
 tile_set = SubResource("TileSet_1")
 format = 2
 script = ExtResource("4")
@@ -49,12 +62,9 @@ offset_right = 176.0
 offset_bottom = 64.0
 color = Color(0.1, 0.4, 0.1, 1)
 
-[node name="HouseSprite" type="ColorRect" parent="Props" unique_id=1854469022]
-offset_left = -140.0
-offset_top = 60.0
-offset_right = -92.0
-offset_bottom = 88.0
-color = Color(0.7, 0.4, 0.2, 1)
+[node name="HouseSprite" type="Sprite2D" parent="Props" unique_id=1854469022]
+position = Vector2(-140, 74)
+texture = ExtResource("11")
 
 [node name="House" type="Area2D" parent="Props" unique_id=1827534564]
 position = Vector2(-140, 68)
@@ -101,18 +111,16 @@ theme_override_font_sizes/font_size = 6
 text = "Read  [E]"
 horizontal_alignment = 1
 
+[node name="Carrot" parent="Props" unique_id=745163815 instance=ExtResource("9")]
+position = Vector2(20, 10)
+item_name = "Carrot"
+
 [node name="Player" parent="." unique_id=250527019 instance=ExtResource("1")]
 
 [node name="Camera2D" type="Camera2D" parent="Player" unique_id=380348453]
-zoom = Vector2(3, 3)
 script = ExtResource("3")
 target = NodePath("../../Player")
 
 [node name="Minimap" parent="." unique_id=141841224 instance=ExtResource("7")]
 
-[node name="InventoryUI" parent="." instance=ExtResource("8")]
-
-[node name="Carrot" parent="Props" instance=ExtResource("9")]
-position = Vector2(20, 10)
-item_name = "Carrot"
-item_count = 1
+[node name="InventoryUI" parent="." unique_id=1903052598 instance=ExtResource("8")]

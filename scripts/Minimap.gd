@@ -4,7 +4,7 @@ extends CanvasLayer
 # Draws fixed terrain zones that match TileMapGen layout.
 # No SubViewport — pure _draw() on a Control node.
 
-const TILE  := 16          # world pixels per tile
+const TILE  := 64          # world pixels per tile
 const MAP_W := 32          # tiles wide (must match TileMapGen)
 const MAP_H := 24          # tiles tall
 
@@ -84,8 +84,8 @@ func _on_draw() -> void:
 	# 4. path            x:-2..1
 	_draw_zone(origin, scale, half_w, half_h, -2, -half_h, 3, MAP_H, C_PATH)
 
-	# 5. house           world pos (-140, 60) → tile (-9, 4)
-	_draw_zone(origin, scale, half_w, half_h, -9, 3, 3, 2, C_HOUSE)
+	# 5. house           world pos (-140, 60) → tile (-2, 1)
+	_draw_zone(origin, scale, half_w, half_h, -2, 1, 1, 1, C_HOUSE)
 
 	# 6. trees (approx tile positions)
 	for tp in [Vector2i(5, -4), Vector2i(-8, -5), Vector2i(10, 3)]:
