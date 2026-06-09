@@ -39,14 +39,14 @@ func clear_interactable_data() -> void:
 
 func _handle_interact(data: Dictionary) -> void:
 	match data.get("action", ""):
+		"pickup":
+			data["node"].pickup(self)
 		"show_text":
 			print(data.get("text", "..."))
 		"enter_house":
 			var loader := get_tree().get_first_node_in_group("level_loader")
 			if loader:
 				loader.load_level("res://levels/" + data["target_level"] + ".json")
-		_:
-			pass
 
 func _dir_name(d: Vector2) -> String:
 	if abs(d.x) >= abs(d.y):
