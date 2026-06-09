@@ -1,30 +1,52 @@
 extends CharacterBody2D
 
-const SPEED := 80.0
+const SPEED        := 80.0
+const SPRINT_SPEED := 140.0
+const STAMINA_MAX  := 100.0
+const STAMINA_DRAIN := 30.0   # per second sprinting
+const STAMINA_REGEN := 20.0   # per second not sprinting
 
 @onready var sprite: ColorRect       = $Sprite
 @onready var anim:   AnimationPlayer = $AnimationPlayer
+@onready var _stamina_bar = null
 
 var facing             := Vector2.DOWN
 var _interact_data: Dictionary = {}
+var _stamina := STAMINA_MAX
 
 func _ready() -> void:
 	add_to_group("player")
+	# defer so World is ready
+	call_deferred("_find_stamina_bar")
 
-func _physics_process(_delta: float) -> void:
+func _find_stamina_bar() -> void:
+	var bars := get_tree().get_nodes_in_group("stamina_bar")
+	if bars.size() > 0:
+		_stamina_bar = bars[0]
+
+func _physics_process(delta: float) -> void:
 	var dir := Vector2(
 		Input.get_axis("ui_left",  "ui_right"),
 		Input.get_axis("ui_up",    "ui_down"),
 	)
 
+	var sprinting := Input.is_action_pressed("sprint") and _stamina > 0.0
+	var speed := SPRINT_SPEED if sprinting else SPEED
+
+	if sprinting:
+		_stamina = max(0.0, _stamina - STAMINA_DRAIN * delta)
+	else:
+		_stamina = min(STAMINA_MAX, _stamina + STAMINA_REGEN * delta)
+
 	if dir != Vector2.ZERO:
 		facing = dir
-		velocity = dir.normalized() * SPEED
+		velocity = dir.normalized() * speed
 		_play_walk(dir)
 	else:
 		velocity = Vector2.ZERO
 		anim.play("idle_" + _dir_name(facing))
-
+	if _stamina_bar:
+			_stamina_bar.update(_stamina)
 	move_and_slide()
 
 func _unhandled_input(event: InputEvent) -> void:

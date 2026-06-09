@@ -6,6 +6,8 @@
 [ext_resource type="Script" path="res://scripts/LevelLoader.gd" id="4"]
 [ext_resource type="PackedScene" uid="uid://minimap" path="res://scenes/Minimap.tscn" id="5"]
 [ext_resource type="PackedScene" uid="uid://inventoryui" path="res://scenes/InventoryUI.tscn" id="6"]
+[ext_resource type="PackedScene" path="res://scenes/StaminaBar.tscn" id="7"]
+
 
 [sub_resource type="TileSet" id="TileSet_1"]
 tile_size = Vector2i(64, 64)
@@ -37,3 +39,5 @@ music_player_path = NodePath("../Music")
 [node name="Minimap" parent="." instance=ExtResource("5")]
 
 [node name="InventoryUI" parent="." instance=ExtResource("6")]
+
+[node name="StaminaBar" parent="." instance=ExtResource("7")]
