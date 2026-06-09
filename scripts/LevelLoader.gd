@@ -67,23 +67,48 @@ func _clear() -> void:
 
 func _build_tiles(data: Dictionary) -> void:
 	var map: Dictionary = data.get("map", {})
+	var tile_size: int = map.get("tile_size", 64)
+	var tileset_path: String = map.get("tileset", "")
+
+	# Build atlas sources programmatically
+	var ts := TileSet.new()
+	ts.tile_size = Vector2i(tile_size, tile_size)
+
+	for key in TILE_SOURCE_IDS:
+		var tex_path := ""
+		match key:
+			"grass": tex_path = "res://assets/tilesets/grass.png"
+			"dirt":  tex_path = "res://assets/tilesets/dirt.png"
+			"water": tex_path = "res://assets/tilesets/water.png"
+			"path":  tex_path = "res://assets/tilesets/path.png"
+		if tex_path == "":
+			continue
+		var tex = load(tex_path)
+		if tex == null:
+			continue
+		var src := TileSetAtlasSource.new()
+		src.texture = tex
+		src.texture_region_size = Vector2i(tile_size, tile_size)
+		src.create_tile(Vector2i(0, 0))
+		ts.add_source(src, TILE_SOURCE_IDS[key])
+
+	_tilemap.tile_set = ts
+
+	# Now fill tiles
 	var w: int = map.get("width",  32)
 	var h: int = map.get("height", 24)
 	var hw := w / 2
 	var hh := h / 2
 
-	# grass base
 	for x in range(-hw, hw):
 		for y in range(-hh, hh):
 			_tilemap.set_cell(0, Vector2i(x, y), TILE_SOURCE_IDS["grass"], Vector2i(0, 0))
 
-	# overlay zones
 	for zone in map.get("tiles", []):
 		var src_id: int = TILE_SOURCE_IDS.get(zone["type"], 0)
 		for x in range(zone["x"], zone["x"] + zone["w"]):
 			for y in range(zone["y"], zone["y"] + zone["h"]):
 				_tilemap.set_cell(0, Vector2i(x, y), src_id, Vector2i(0, 0))
-
 func _place_props(data: Dictionary) -> void:
 	for prop in data.get("props", []):
 		match prop.get("type", ""):
