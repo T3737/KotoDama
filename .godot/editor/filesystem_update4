@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 res://scripts/Camera.gd
 res://scripts/House.gd
 res://scripts/Interactable.gd
@@ -5,3 +6,7 @@ res://scripts/Player.gd
 res://scripts/Sign.gd
 res://scripts/TileMapGen.gd
 res://scripts/World.gd
+=======
+res://scripts/LevelLoader.gd
+res://scripts/Player.gd
+>>>>>>> 815e1b43d5dcaf5d5c61c16c137340871972938f

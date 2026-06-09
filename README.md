@@ -49,3 +49,5 @@ scripts/
 - [ ] AnimationPlayer walk/idle cycles on Player
 - [ ] Interactable system (house door, objects)
 - [ ] Inventory / farming layer
+
+# physical_keycode 77 = M key

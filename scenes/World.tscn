@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 [gd_scene load_steps=10 format=3 uid="uid://world"]
 
 [ext_resource type="PackedScene" path="res://scenes/Player.tscn"       id="1"]
@@ -15,17 +16,36 @@ size = Vector2(48, 16)
 
 [sub_resource type="RectangleShape2D" id="Shape_sign"]
 size = Vector2(16, 16)
+=======
+[gd_scene format=3 uid="uid://world"]
+
+[ext_resource type="PackedScene" uid="uid://player" path="res://scenes/Player.tscn" id="1"]
+[ext_resource type="Script" uid="uid://bfqpkkfwv87tr" path="res://scripts/World.gd" id="2"]
+[ext_resource type="Script" uid="uid://c7u5572f362kj" path="res://scripts/Camera.gd" id="3"]
+[ext_resource type="Script" path="res://scripts/LevelLoader.gd" id="4"]
+[ext_resource type="PackedScene" uid="uid://minimap" path="res://scenes/Minimap.tscn" id="5"]
+[ext_resource type="PackedScene" uid="uid://inventoryui" path="res://scenes/InventoryUI.tscn" id="6"]
+[ext_resource type="PackedScene" path="res://scenes/StaminaBar.tscn" id="7"]
+
+
+[sub_resource type="TileSet" id="TileSet_1"]
+tile_size = Vector2i(64, 64)
+>>>>>>> 815e1b43d5dcaf5d5c61c16c137340871972938f
 
 [node name="World" type="Node2D"]
 script = ExtResource("2")
 
 [node name="TerrainMap" type="TileMap" parent="."]
+<<<<<<< HEAD
 script = ExtResource("4")
+=======
+>>>>>>> 815e1b43d5dcaf5d5c61c16c137340871972938f
 tile_set = SubResource("TileSet_1")
 format = 2
 
 [node name="Props" type="Node2D" parent="."]
 
+<<<<<<< HEAD
 [node name="Tree1" type="ColorRect" parent="Props"]
 offset_left = -8.0
 offset_top = -20.0
@@ -116,3 +136,25 @@ position = Vector2(0, 0)
 zoom = Vector2(3, 3)
 script = ExtResource("3")
 target = NodePath("../../Player")
+=======
+[node name="Player" parent="." instance=ExtResource("1")]
+
+[node name="Camera2D" type="Camera2D" parent="Player"]
+script = ExtResource("3")
+target = NodePath("..")
+
+[node name="LevelLoader" type="Node" parent="."]
+script = ExtResource("4")
+tilemap_path = NodePath("../TerrainMap")
+props_path = NodePath("../Props")
+player_path = NodePath("../Player")
+music_player_path = NodePath("../Music")
+
+[node name="Music" type="AudioStreamPlayer" parent="."]
+
+[node name="Minimap" parent="." instance=ExtResource("5")]
+
+[node name="InventoryUI" parent="." instance=ExtResource("6")]
+
+[node name="StaminaBar" parent="." instance=ExtResource("7")]
+>>>>>>> 815e1b43d5dcaf5d5c61c16c137340871972938f
