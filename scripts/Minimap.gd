@@ -24,16 +24,13 @@ const C_GRASS := Color(0.25, 0.55, 0.2)
 const C_DIRT  := Color(0.55, 0.35, 0.15)
 const C_WATER := Color(0.15, 0.4,  0.75)
 const C_PATH  := Color(0.72, 0.62, 0.42)
-const C_HOUSE := Color(0.7,  0.4,  0.2)
+const C_HOUSE := Color(0.9,  0.85, 0.7)   # light cream — distinct from dirt
 const C_TREE  := Color(0.1,  0.4,  0.1)
 const C_PLAYER:= Color(1.0,  0.9,  0.1)
 const C_BG    := Color(0.05, 0.05, 0.05, 0.82)
 
 func _ready() -> void:
 	_player = get_node_or_null(player_path)
-	if _player == null:
-		# fallback: find player by group at runtime
-		pass
 	_canvas.draw.connect(_on_draw)
 	_canvas.set_process(true)
 
@@ -59,16 +56,10 @@ func _on_draw() -> void:
 	var origin: Vector2
 	if _full_open:
 		origin = (vp - Vector2(map_px_w, map_px_h)) / 2.0
-		# dim background
 		_canvas.draw_rect(Rect2(Vector2.ZERO, vp), Color(0, 0, 0, 0.55))
 	else:
-		# bottom-right corner
 		origin = Vector2(vp.x - map_px_w - MARGIN, vp.y - map_px_h - MARGIN)
 
-	# background
-	_canvas.draw_rect(Rect2(origin, Vector2(map_px_w, map_px_h)), C_BG)
-
-	# helper: world-tile to map-pixel
 	var half_w := MAP_W / 2
 	var half_h := MAP_H / 2
 
@@ -78,18 +69,19 @@ func _on_draw() -> void:
 	# 2. dirt farm plot  x:-10..-2  y:-4..4
 	_draw_zone(origin, scale, half_w, half_h, -10, -4, 8, 8, C_DIRT)
 
-	# 3. water strip     x:12..15
+	# 3. water strip  x:12..15
 	_draw_zone(origin, scale, half_w, half_h, 12, -half_h, 3, MAP_H, C_WATER)
 
-	# 4. path            x:-2..1
+	# 4. path  x:-2..1
 	_draw_zone(origin, scale, half_w, half_h, -2, -half_h, 3, MAP_H, C_PATH)
 
-	# 5. house           world pos (-140, 60) → tile (-2, 1)
-	_draw_zone(origin, scale, half_w, half_h, -2, 1, 1, 1, C_HOUSE)
-
-	# 6. trees (approx tile positions)
+	# 5. trees (approx tile positions)
 	for tp in [Vector2i(5, -4), Vector2i(-8, -5), Vector2i(10, 3)]:
 		_draw_zone(origin, scale, half_w, half_h, tp.x, tp.y, 1, 1, C_TREE)
+
+	# 6. house — world pos (-140, 68) → tile (-3, 1), drawn after path so it's visible
+	# 2×2 tiles so it's readable at minimap scale
+	_draw_zone(origin, scale, half_w, half_h, -3, 1, 2, 2, C_HOUSE)
 
 	# 7. player dot
 	if _player != null:
@@ -99,7 +91,6 @@ func _on_draw() -> void:
 		var r: float = max(1.5, scale * 0.4)
 		_canvas.draw_circle(px, r, C_PLAYER)
 
-	# label when full map open
 	if _full_open:
 		_canvas.draw_string(
 			ThemeDB.fallback_font,

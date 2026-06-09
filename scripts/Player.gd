@@ -2,11 +2,11 @@ extends CharacterBody2D
 
 const SPEED := 80.0
 
-@onready var sprite: ColorRect     = $Sprite
+@onready var sprite: ColorRect       = $Sprite
 @onready var anim:   AnimationPlayer = $AnimationPlayer
 
-var facing           := Vector2.DOWN
-var _interactable: Interactable = null   # closest interactable in range
+var facing             := Vector2.DOWN
+var _interact_data: Dictionary = {}
 
 func _ready() -> void:
 	add_to_group("player")
@@ -28,18 +28,25 @@ func _physics_process(_delta: float) -> void:
 	move_and_slide()
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("interact") and _interactable != null:
-		_interactable.interact(self)
+	if event.is_action_pressed("interact") and not _interact_data.is_empty():
+		_handle_interact(_interact_data)
 
-# Called by Interactable when the player enters its area.
-func set_interactable(obj: Interactable) -> void:
-	_interactable = obj
+func set_interactable_data(data: Dictionary) -> void:
+	_interact_data = data
 
-# Called by Interactable when the player leaves its area.
-# Only clears if it's still the active one (handles overlapping zones).
-func clear_interactable(obj: Interactable) -> void:
-	if _interactable == obj:
-		_interactable = null
+func clear_interactable_data() -> void:
+	_interact_data = {}
+
+func _handle_interact(data: Dictionary) -> void:
+	match data.get("action", ""):
+		"show_text":
+			print(data.get("text", "..."))
+		"enter_house":
+			var loader := get_tree().get_first_node_in_group("level_loader")
+			if loader:
+				loader.load_level("res://levels/" + data["target_level"] + ".json")
+		_:
+			pass
 
 func _dir_name(d: Vector2) -> String:
 	if abs(d.x) >= abs(d.y):
