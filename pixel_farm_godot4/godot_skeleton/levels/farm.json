@@ -1,11 +1,11 @@
 {
   "id": "farm",
   "display_name": "PixelFarm",
-  "music": "res://audio/farm_theme.ogg",
+  "music": "",
   "map": {
     "width": 32,
     "height": 24,
-    "tileset": "res://assets/tilesets/farm_tiles.png",
+    "tileset": "",
     "tile_size": 64,
     "tiles": [
       { "x": -10, "y": -4, "w": 8, "h": 8, "type": "dirt" },
