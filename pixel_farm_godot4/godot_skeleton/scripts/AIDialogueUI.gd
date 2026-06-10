@@ -14,6 +14,7 @@ signal dialogue_closed
 
 func _ready() -> void:
 	panel.visible = false
+	player_input.release_focus()
 	send_button.pressed.connect(_submit_text)
 	close_button.pressed.connect(close_dialogue)
 	player_input.text_submitted.connect(_on_text_submitted)
@@ -28,8 +29,12 @@ func open_dialogue(npc_name: String) -> void:
 	player_input.grab_focus()
 
 func close_dialogue() -> void:
+	player_input.release_focus()
 	panel.visible = false
 	dialogue_closed.emit()
+
+func is_open() -> bool:
+	return panel.visible
 
 func append_player_text(text: String) -> void:
 	conversation.append_text("[color=#8ecbff][b]You:[/b][/color] %s\n" % _escape_bbcode(text))
@@ -53,7 +58,8 @@ func show_error(message: String) -> void:
 	status_label.text = message
 	status_label.modulate = Color(1.0, 0.4, 0.4)
 	conversation.append_text("[color=#ff7777][b]Error:[/b] %s[/color]\n" % _escape_bbcode(message))
-	player_input.grab_focus()
+	if panel.visible:
+		player_input.grab_focus()
 
 func _submit_text() -> void:
 	var text := player_input.text.strip_edges()

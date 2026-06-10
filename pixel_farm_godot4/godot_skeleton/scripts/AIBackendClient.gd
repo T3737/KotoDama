@@ -41,10 +41,12 @@ func send_message(
 	)
 
 	if request_error != OK:
+		print("AI backend error: request could not start (", request_error, ")")
 		request_failed.emit("Could not start the backend request (error %d)." % request_error)
 		return
 
 	_busy = true
+	print("AI backend request sent to ", endpoint)
 
 func _on_request_completed(
 	result: int,
@@ -55,6 +57,7 @@ func _on_request_completed(
 	_busy = false
 
 	if result != HTTPRequest.RESULT_SUCCESS:
+		print("AI backend error: network result ", result)
 		request_failed.emit(
 			"Cannot contact the AI backend at %s (network error %d)." % [endpoint, result]
 		)
@@ -67,11 +70,14 @@ func _on_request_completed(
 		var detail := response_text
 		if parsed is Dictionary and parsed.has("detail"):
 			detail = str(parsed["detail"])
+		print("AI backend error: HTTP ", response_code)
 		request_failed.emit("Backend error %d: %s" % [response_code, detail])
 		return
 
 	if not parsed is Dictionary or not parsed.has("npc_text"):
+		print("AI backend error: response missing npc_text")
 		request_failed.emit("The backend response did not contain npc_text.")
 		return
 
+	print("AI backend response received with npc_text")
 	response_received.emit(str(parsed["npc_text"]))
