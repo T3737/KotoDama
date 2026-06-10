@@ -1,0 +1,187 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://scripts/AIDialogueDemo.gd" id="1_demo"]
+[ext_resource type="Script" path="res://scripts/AIDemoPlayer.gd" id="2_player"]
+[ext_resource type="Script" path="res://scripts/AITestNPC.gd" id="3_npc"]
+[ext_resource type="Script" path="res://scripts/AIDialogueUI.gd" id="4_ui"]
+[ext_resource type="Script" path="res://scripts/AIBackendClient.gd" id="5_backend"]
+
+[sub_resource type="RectangleShape2D" id="NPCInteractionShape"]
+size = Vector2(62, 52)
+
+[sub_resource type="RectangleShape2D" id="PlayerShape"]
+size = Vector2(12, 16)
+
+[sub_resource type="StyleBoxFlat" id="DialoguePanelStyle"]
+bg_color = Color(0.07, 0.09, 0.14, 0.96)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.35, 0.68, 0.82, 1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+
+[sub_resource type="StyleBoxFlat" id="NameStyle"]
+bg_color = Color(0.15, 0.34, 0.42, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[node name="AIDialogueDemo" type="Node2D"]
+script = ExtResource("1_demo")
+
+[node name="Background" type="ColorRect" parent="."]
+offset_right = 320.0
+offset_bottom = 180.0
+mouse_filter = 2
+color = Color(0.2, 0.45, 0.31, 1)
+
+[node name="Path" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(0, 74, 320, 74, 320, 112, 0, 112)
+color = Color(0.67, 0.55, 0.36, 1)
+
+[node name="Pond" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(15, 15, 80, 10, 105, 35, 90, 58, 25, 55, 8, 37)
+color = Color(0.2, 0.55, 0.75, 1)
+
+[node name="Title" type="Label" parent="."]
+offset_left = 8.0
+offset_top = 4.0
+offset_right = 188.0
+offset_bottom = 20.0
+theme_override_colors/font_color = Color(0.95, 1, 0.9, 1)
+theme_override_font_sizes/font_size = 10
+text = "AI Dialogue Demo - find Aiko"
+
+[node name="Aiko" type="Area2D" parent="."]
+position = Vector2(205, 94)
+collision_layer = 0
+collision_mask = 1
+script = ExtResource("3_npc")
+prompt_text = "Press E to talk"
+
+[node name="Body" type="Polygon2D" parent="Aiko"]
+polygon = PackedVector2Array(-10, -10, 10, -10, 13, 15, -13, 15)
+color = Color(0.25, 0.36, 0.78, 1)
+
+[node name="Apron" type="Polygon2D" parent="Aiko"]
+polygon = PackedVector2Array(-6, -5, 6, -5, 8, 13, -8, 13)
+color = Color(0.95, 0.8, 0.35, 1)
+
+[node name="Head" type="Polygon2D" parent="Aiko"]
+polygon = PackedVector2Array(-8, -23, 8, -23, 10, -12, 6, -7, -6, -7, -10, -12)
+color = Color(0.96, 0.72, 0.55, 1)
+
+[node name="Hair" type="Polygon2D" parent="Aiko"]
+polygon = PackedVector2Array(-10, -22, 8, -25, 11, -18, 8, -12, 5, -19, -9, -17)
+color = Color(0.2, 0.1, 0.08, 1)
+
+[node name="NameLabel" type="Label" parent="Aiko"]
+offset_left = -24.0
+offset_top = -40.0
+offset_right = 24.0
+offset_bottom = -28.0
+theme_override_colors/font_color = Color(1, 0.94, 0.68, 1)
+theme_override_font_sizes/font_size = 8
+text = "Aiko"
+horizontal_alignment = 1
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Aiko"]
+shape = SubResource("NPCInteractionShape")
+
+[node name="PromptLabel" type="Label" parent="Aiko"]
+offset_left = -42.0
+offset_top = 21.0
+offset_right = 42.0
+offset_bottom = 35.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 8
+text = "Press E to talk"
+horizontal_alignment = 1
+visible = false
+
+[node name="Player" type="CharacterBody2D" parent="."]
+position = Vector2(120, 94)
+script = ExtResource("2_player")
+
+[node name="Body" type="Polygon2D" parent="Player"]
+polygon = PackedVector2Array(-6, -10, 6, -10, 7, 7, -7, 7)
+color = Color(0.35, 0.68, 1, 1)
+
+[node name="Hat" type="Polygon2D" parent="Player"]
+polygon = PackedVector2Array(-8, -11, 8, -11, 4, -15, -4, -15)
+color = Color(0.86, 0.42, 0.2, 1)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Player"]
+shape = SubResource("PlayerShape")
+
+[node name="DialogueUI" type="CanvasLayer" parent="."]
+script = ExtResource("4_ui")
+
+[node name="Panel" type="Panel" parent="DialogueUI"]
+offset_left = 8.0
+offset_top = 26.0
+offset_right = 312.0
+offset_bottom = 176.0
+theme_override_styles/panel = SubResource("DialoguePanelStyle")
+
+[node name="NPCName" type="Label" parent="DialogueUI/Panel"]
+offset_left = 8.0
+offset_top = 7.0
+offset_right = 80.0
+offset_bottom = 25.0
+theme_override_font_sizes/font_size = 11
+theme_override_styles/normal = SubResource("NameStyle")
+text = "Aiko"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="CloseButton" type="Button" parent="DialogueUI/Panel"]
+offset_left = 252.0
+offset_top = 5.0
+offset_right = 294.0
+offset_bottom = 27.0
+theme_override_font_sizes/font_size = 9
+text = "Close"
+
+[node name="Conversation" type="RichTextLabel" parent="DialogueUI/Panel"]
+offset_left = 8.0
+offset_top = 32.0
+offset_right = 296.0
+offset_bottom = 101.0
+theme_override_font_sizes/normal_font_size = 9
+bbcode_enabled = true
+fit_content = false
+scroll_following = true
+
+[node name="Status" type="Label" parent="DialogueUI/Panel"]
+offset_left = 9.0
+offset_top = 102.0
+offset_right = 294.0
+offset_bottom = 116.0
+theme_override_font_sizes/font_size = 8
+text = "Ready"
+
+[node name="PlayerInput" type="LineEdit" parent="DialogueUI/Panel"]
+offset_left = 8.0
+offset_top = 119.0
+offset_right = 242.0
+offset_bottom = 143.0
+theme_override_font_sizes/font_size = 9
+placeholder_text = "Type a message..."
+clear_button_enabled = true
+
+[node name="SendButton" type="Button" parent="DialogueUI/Panel"]
+offset_left = 247.0
+offset_top = 119.0
+offset_right = 296.0
+offset_bottom = 143.0
+theme_override_font_sizes/font_size = 9
+text = "Send"
+
+[node name="AIBackendClient" type="Node" parent="."]
+script = ExtResource("5_backend")
