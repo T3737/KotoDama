@@ -1,0 +1,32 @@
+{
+  "id": "haru",
+  "display_name": "Haru",
+  "role": "busy market shopkeeper",
+  "home_level": "level_02",
+  "personality": {
+    "warmth": 0.45,
+    "patience": 0.35,
+    "formality": 0.85,
+    "curiosity": 0.25
+  },
+  "speaking_style": {
+    "sentence_length": "short",
+    "correction_style": "direct but polite",
+    "uses_simple_language": true
+  },
+  "teaching": {
+    "target_language": "Japanese",
+    "difficulty": "beginner",
+    "focus_topics": ["shopping", "prices", "quantities", "requests"]
+  },
+  "background_context": [
+    "Haru runs a busy produce stall in Level 2.",
+    "Haru values clear requests and does not waste words."
+  ],
+  "greeting": "Welcome. Please tell me what you need and how many.",
+  "colors": {
+    "body": "#8C3F43",
+    "accent": "#E7E1C5",
+    "hair": "#24201E"
+  }
+}

@@ -1,0 +1,63 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/LevelRoot.gd" id="1_level"]
+[ext_resource type="PackedScene" path="res://scenes/characters/NPC.tscn" id="2_npc"]
+[ext_resource type="PackedScene" path="res://scenes/objects/SceneDoor.tscn" id="3_door"]
+[ext_resource type="Script" path="res://scripts/SpawnPoint.gd" id="4_spawn"]
+
+[node name="Level01" type="Node2D"]
+script = ExtResource("1_level")
+level_id = "level_01"
+
+[node name="Background" type="ColorRect" parent="."]
+offset_right = 320.0
+offset_bottom = 180.0
+mouse_filter = 2
+color = Color(0.2, 0.45, 0.31, 1)
+
+[node name="Path" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(0, 74, 320, 74, 320, 112, 0, 112)
+color = Color(0.67, 0.55, 0.36, 1)
+
+[node name="Pond" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(15, 15, 80, 10, 105, 35, 90, 58, 25, 55, 8, 37)
+color = Color(0.2, 0.55, 0.75, 1)
+
+[node name="Title" type="Label" parent="."]
+offset_left = 8.0
+offset_top = 4.0
+offset_right = 180.0
+offset_bottom = 20.0
+theme_override_colors/font_color = Color(0.95, 1, 0.9, 1)
+theme_override_font_sizes/font_size = 10
+text = "Level 1 - Aiko's clearing"
+
+[node name="Aiko" parent="." instance=ExtResource("2_npc")]
+position = Vector2(205, 94)
+npc_id = "aiko"
+
+[node name="ToLevel02" parent="." instance=ExtResource("3_door")]
+position = Vector2(293, 94)
+destination_scene = "res://scenes/levels/level_02.tscn"
+destination_spawn_id = "level_02_entrance"
+
+[node name="DoorLabel" type="Label" parent="ToLevel02"]
+offset_left = -25.0
+offset_top = -37.0
+offset_right = 25.0
+offset_bottom = -25.0
+theme_override_font_sizes/font_size = 7
+text = "Level 2"
+horizontal_alignment = 1
+
+[node name="Spawns" type="Node2D" parent="."]
+
+[node name="Start" type="Marker2D" parent="Spawns"]
+position = Vector2(120, 94)
+script = ExtResource("4_spawn")
+spawn_id = "level_01_start"
+
+[node name="Return" type="Marker2D" parent="Spawns"]
+position = Vector2(250, 94)
+script = ExtResource("4_spawn")
+spawn_id = "level_01_return"

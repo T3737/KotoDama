@@ -56,6 +56,7 @@ func set_movement_enabled(enabled: bool) -> void:
 	if not enabled:
 		velocity = Vector2.ZERO
 		_was_moving = false
+		_interactable = null
 
 func is_movement_enabled() -> bool:
 	return _movement_enabled

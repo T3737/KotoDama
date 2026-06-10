@@ -19,10 +19,20 @@ func _ready() -> void:
 	close_button.pressed.connect(close_dialogue)
 	player_input.text_submitted.connect(_on_text_submitted)
 
-func open_dialogue(npc_name: String) -> void:
+func open_dialogue(npc_name: String, history: Array = [], greeting: String = "") -> void:
 	npc_name_label.text = npc_name
-	if conversation.text.is_empty():
-		append_npc_text("Hello! What would you like to talk about?")
+	conversation.clear()
+	for message in history:
+		if not message is Dictionary:
+			continue
+		var role := str(message.get("role", ""))
+		var content := str(message.get("content", ""))
+		if role == "user":
+			append_player_text(content)
+		elif role == "assistant":
+			append_npc_text(content)
+	if history.is_empty() and not greeting.is_empty():
+		append_npc_text(greeting)
 	status_label.text = "Connected to local demo UI"
 	status_label.modulate = Color(0.65, 0.85, 0.7)
 	panel.visible = true
@@ -52,6 +62,9 @@ func set_thinking(thinking: bool) -> void:
 	send_button.disabled = thinking
 	status_label.text = "Thinking..." if thinking else "Ready"
 	status_label.modulate = Color(1.0, 0.85, 0.45) if thinking else Color(0.65, 0.85, 0.7)
+
+func is_request_active() -> bool:
+	return send_button.disabled
 
 func show_error(message: String) -> void:
 	set_thinking(false)

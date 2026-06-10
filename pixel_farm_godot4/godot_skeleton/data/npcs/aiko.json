@@ -1,0 +1,32 @@
+{
+  "id": "aiko",
+  "display_name": "Aiko",
+  "role": "friendly village resident",
+  "home_level": "level_01",
+  "personality": {
+    "warmth": 0.9,
+    "patience": 0.8,
+    "formality": 0.3,
+    "curiosity": 0.7
+  },
+  "speaking_style": {
+    "sentence_length": "short",
+    "correction_style": "gentle",
+    "uses_simple_language": true
+  },
+  "teaching": {
+    "target_language": "Japanese",
+    "difficulty": "beginner",
+    "focus_topics": ["introductions", "daily activities"]
+  },
+  "background_context": [
+    "Aiko lives in the quiet Level 1 farm clearing.",
+    "Aiko enjoys meeting travellers and remembers previous conversations."
+  ],
+  "greeting": "Hello! It is good to see you. What would you like to talk about?",
+  "colors": {
+    "body": "#405CC7",
+    "accent": "#F2CC59",
+    "hair": "#331A14"
+  }
+}

@@ -1,7 +1,7 @@
 class_name AIBackendClient
 extends Node
 
-signal response_received(npc_text: String)
+signal response_received(response: Dictionary)
 signal request_failed(message: String)
 
 @export var endpoint := "http://127.0.0.1:8000/npc/chat"
@@ -11,27 +11,15 @@ var _busy := false
 
 func _ready() -> void:
 	_request = HTTPRequest.new()
+	_request.timeout = 35.0
 	add_child(_request)
 	_request.request_completed.connect(_on_request_completed)
 
-func send_message(
-	player_text: String,
-	npc_name: String,
-	target_language: String,
-	scene_context: String,
-	session_id: String
-) -> void:
+func send_message(payload: Dictionary) -> void:
 	if _busy:
 		request_failed.emit("A request is already in progress.")
 		return
 
-	var payload := {
-		"session_id": session_id,
-		"player_text": player_text,
-		"target_language": target_language,
-		"npc_name": npc_name,
-		"scene_context": scene_context,
-	}
 	var headers := PackedStringArray(["Content-Type: application/json"])
 	var request_error := _request.request(
 		endpoint,
@@ -64,7 +52,9 @@ func _on_request_completed(
 		return
 
 	var response_text := body.get_string_from_utf8()
-	var parsed: Variant = JSON.parse_string(response_text)
+	var json := JSON.new()
+	var parse_error := json.parse(response_text)
+	var parsed: Variant = json.data if parse_error == OK else null
 
 	if response_code < 200 or response_code >= 300:
 		var detail := response_text
@@ -74,10 +64,20 @@ func _on_request_completed(
 		request_failed.emit("Backend error %d: %s" % [response_code, detail])
 		return
 
-	if not parsed is Dictionary or not parsed.has("npc_text"):
-		print("AI backend error: response missing npc_text")
-		request_failed.emit("The backend response did not contain npc_text.")
+	if not parsed is Dictionary:
+		print("AI backend error: malformed JSON response")
+		request_failed.emit("The backend returned malformed JSON.")
 		return
+	var dialogue := str(parsed.get("dialogue", parsed.get("npc_text", ""))).strip_edges()
+	if dialogue.is_empty():
+		print("AI backend error: response missing dialogue")
+		request_failed.emit("The backend response did not contain dialogue text.")
+		return
+	parsed["dialogue"] = dialogue
+	parsed["npc_text"] = dialogue
 
-	print("AI backend response received with npc_text")
-	response_received.emit(str(parsed["npc_text"]))
+	print("AI backend response received with dialogue")
+	response_received.emit(parsed)
+
+func is_busy() -> bool:
+	return _busy
