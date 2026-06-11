@@ -17,6 +17,36 @@ Controls:
 | E | Talk or use a door |
 | Enter | Submit dialogue while the text box is focused |
 
+## Voice Input Prototype
+
+The isolated AI dialogue panel includes `Record` and `Stop / Transcribe`
+buttons. Recording uses Godot's native `AudioStreamMicrophone`, routed through
+the muted `Record` bus and its `AudioEffectRecord`. It writes a temporary
+16-bit WAV to `user://voice_recording.wav` and sends it as multipart form field
+`file` to:
+
+```text
+http://127.0.0.1:8000/speech/transcribe
+```
+
+The returned English transcript is shown in the voice status line and copied
+into the existing text field for editing before it is sent to `/npc/chat`.
+
+Start the backend in mock STT mode for the simplest test:
+
+```powershell
+cd backend
+$env:STT_MODE = "mock"
+uvicorn app.main:app --reload
+```
+
+Open dialogue with Aiko, select `Record`, speak briefly, then select
+`Stop / Transcribe`. Windows, macOS, Linux, Android, and iOS may require
+microphone permission in operating-system privacy settings. Exported mobile
+builds also require the platform's microphone permission configuration.
+On Windows, check `Settings > Privacy & security > Microphone` and allow
+microphone access for desktop applications/Godot if the saved file is empty.
+
 ## Architecture
 
 ```text

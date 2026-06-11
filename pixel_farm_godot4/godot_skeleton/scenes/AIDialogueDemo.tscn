@@ -1,9 +1,10 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/AIDialogueDemo.gd" id="1_demo"]
 [ext_resource type="PackedScene" path="res://scenes/characters/DemoPlayer.tscn" id="2_player"]
 [ext_resource type="Script" path="res://scripts/AIDialogueUI.gd" id="3_ui"]
 [ext_resource type="Script" path="res://scripts/AIBackendClient.gd" id="4_backend"]
+[ext_resource type="Script" path="res://scripts/AIVoiceRecorder.gd" id="5_voice"]
 
 [sub_resource type="StyleBoxFlat" id="DialoguePanelStyle"]
 bg_color = Color(0.07, 0.09, 0.14, 0.96)
@@ -23,6 +24,8 @@ corner_radius_top_left = 3
 corner_radius_top_right = 3
 corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
+
+[sub_resource type="AudioStreamMicrophone" id="AudioStreamMicrophone_voice"]
 
 [node name="AIDialogueDemo" type="Node2D"]
 script = ExtResource("1_demo")
@@ -64,7 +67,7 @@ text = "Close"
 offset_left = 8.0
 offset_top = 32.0
 offset_right = 296.0
-offset_bottom = 101.0
+offset_bottom = 82.0
 theme_override_font_sizes/normal_font_size = 9
 bbcode_enabled = true
 fit_content = false
@@ -72,28 +75,64 @@ scroll_following = true
 
 [node name="Status" type="Label" parent="DialogueUI/Panel"]
 offset_left = 9.0
-offset_top = 102.0
+offset_top = 83.0
 offset_right = 294.0
-offset_bottom = 116.0
+offset_bottom = 95.0
 theme_override_font_sizes/font_size = 8
 text = "Ready"
 
+[node name="TranscriptStatus" type="Label" parent="DialogueUI/Panel"]
+offset_left = 9.0
+offset_top = 96.0
+offset_right = 294.0
+offset_bottom = 108.0
+theme_override_font_sizes/font_size = 7
+text = "Voice: Ready"
+text_overrun_behavior = 3
+
 [node name="PlayerInput" type="LineEdit" parent="DialogueUI/Panel"]
 offset_left = 8.0
-offset_top = 119.0
+offset_top = 109.0
 offset_right = 242.0
-offset_bottom = 143.0
+offset_bottom = 130.0
 theme_override_font_sizes/font_size = 9
 placeholder_text = "Type a message..."
 clear_button_enabled = true
 
 [node name="SendButton" type="Button" parent="DialogueUI/Panel"]
 offset_left = 247.0
-offset_top = 119.0
+offset_top = 109.0
 offset_right = 296.0
-offset_bottom = 143.0
+offset_bottom = 130.0
 theme_override_font_sizes/font_size = 9
 text = "Send"
 
+[node name="RecordButton" type="Button" parent="DialogueUI/Panel"]
+offset_left = 8.0
+offset_top = 132.0
+offset_right = 102.0
+offset_bottom = 148.0
+theme_override_font_sizes/font_size = 7
+text = "Record"
+
+[node name="TranscribeButton" type="Button" parent="DialogueUI/Panel"]
+offset_left = 106.0
+offset_top = 132.0
+offset_right = 238.0
+offset_bottom = 148.0
+theme_override_font_sizes/font_size = 7
+text = "Stop / Transcribe"
+disabled = true
+
 [node name="AIBackendClient" type="Node" parent="."]
 script = ExtResource("4_backend")
+
+[node name="AIVoiceRecorder" type="Node" parent="."]
+script = ExtResource("5_voice")
+
+[node name="AudioStreamRecord" type="AudioStreamPlayer" parent="AIVoiceRecorder"]
+stream = SubResource("AudioStreamMicrophone_voice")
+autoplay = true
+bus = &"Record"
+
+[node name="Playback" type="AudioStreamPlayer" parent="AIVoiceRecorder"]

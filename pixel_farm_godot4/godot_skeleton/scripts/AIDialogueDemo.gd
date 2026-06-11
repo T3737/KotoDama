@@ -9,6 +9,7 @@ const LEVEL_SCENES := {
 @onready var player = $Player
 @onready var dialogue_ui: AIDialogueUI = $DialogueUI
 @onready var backend_client: AIBackendClient = $AIBackendClient
+@onready var voice_recorder: AIVoiceRecorder = $AIVoiceRecorder
 
 var _current_level: Node2D
 var _active_npc: Node
@@ -19,8 +20,12 @@ var _transitioning := false
 func _ready() -> void:
 	dialogue_ui.message_submitted.connect(_on_message_submitted)
 	dialogue_ui.dialogue_closed.connect(_on_dialogue_closed)
+	dialogue_ui.record_requested.connect(_on_record_requested)
+	dialogue_ui.transcribe_requested.connect(_on_transcribe_requested)
 	backend_client.response_received.connect(_on_response_received)
 	backend_client.request_failed.connect(_on_request_failed)
+	backend_client.transcription_received.connect(_on_transcription_received)
+	backend_client.transcription_failed.connect(_on_transcription_failed)
 	GameState.load_game()
 	var level_id := GameState.current_level_id
 	if not LEVEL_SCENES.has(level_id):
@@ -114,6 +119,7 @@ func _on_message_submitted(player_text: String) -> void:
 	var npc_state := GameState.get_npc_state(npc_id)
 	_request_npc_id = npc_id
 	_pending_player_text = player_text
+	print("Text sent to NPC %s (%d characters)" % [npc_id, player_text.length()])
 	dialogue_ui.append_player_text(player_text)
 	dialogue_ui.set_thinking(true)
 	var payload := {
@@ -142,6 +148,7 @@ func _on_response_received(response: Dictionary) -> void:
 	if dialogue_ui.is_open() and _active_npc != null and _active_npc.npc_id == _request_npc_id:
 		dialogue_ui.append_npc_text(dialogue)
 		dialogue_ui.player_input.grab_focus()
+	print("NPC response received (%d characters)" % dialogue.length())
 	GameState.save_game()
 	_request_npc_id = ""
 	_pending_player_text = ""
@@ -155,9 +162,44 @@ func _on_request_failed(message: String) -> void:
 	_pending_player_text = ""
 
 func _on_dialogue_closed() -> void:
+	voice_recorder.cancel_recording()
+	backend_client.cancel_transcription()
+	voice_recorder.remove_temporary_wav()
 	player.set_movement_enabled(true)
 	_active_npc = null
 	print("AI dialogue closed")
+
+func _on_record_requested() -> void:
+	if not dialogue_ui.is_open() or backend_client.is_busy():
+		return
+	if voice_recorder.start_recording():
+		dialogue_ui.set_recording()
+	else:
+		dialogue_ui.show_voice_error(voice_recorder.get_last_error())
+
+func _on_transcribe_requested() -> void:
+	if backend_client.is_transcribing():
+		return
+	var wav_path := voice_recorder.stop_recording()
+	if wav_path.is_empty():
+		dialogue_ui.show_voice_error(voice_recorder.get_last_error())
+		return
+	var file_size := voice_recorder.get_saved_file_size()
+	if file_size <= 0:
+		dialogue_ui.show_voice_error("Voice: recording file missing/empty")
+		return
+	dialogue_ui.set_transcribing(file_size)
+	backend_client.transcribe_audio(wav_path)
+
+func _on_transcription_received(transcript: String) -> void:
+	voice_recorder.remove_temporary_wav()
+	if dialogue_ui.is_open():
+		dialogue_ui.set_transcript(transcript)
+
+func _on_transcription_failed(message: String) -> void:
+	voice_recorder.remove_temporary_wav()
+	if dialogue_ui.is_open():
+		dialogue_ui.show_voice_error(message)
 
 func _apply_controlled_updates(npc_id: String, response: Dictionary) -> void:
 	for fact in response.get("memory_updates", []):
