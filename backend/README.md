@@ -88,6 +88,59 @@ history from entering another NPC's session.
 The in-memory backend session store is intentionally small and non-durable.
 Godot sends persisted NPC state/history after a backend restart.
 
+## Speech Transcription Prototype
+
+`POST /speech/transcribe` accepts an English audio upload in a multipart field
+named `file`. Supported filename extensions are `.wav`, `.ogg`, and `.webm`.
+
+Mock mode is the default and does not require a speech model:
+
+```powershell
+$env:STT_MODE = "mock"
+uvicorn app.main:app --reload
+```
+
+Test it from PowerShell:
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/speech/transcribe" `
+  -Method POST `
+  -Form @{ file = Get-Item ".\test_audio.wav" }
+```
+
+Or with curl:
+
+```bash
+curl -X POST http://127.0.0.1:8000/speech/transcribe \
+  -F "file=@test_audio.wav"
+```
+
+Mock response:
+
+```json
+{
+  "transcript": "i would like to learn japanese",
+  "language": "en",
+  "status": "ok"
+}
+```
+
+For optional local transcription with faster-whisper:
+
+```powershell
+pip install -r requirements-stt.txt
+$env:STT_MODE = "local"
+$env:STT_MODEL = "tiny.en"
+uvicorn app.main:app --reload
+```
+
+`STT_MODEL` defaults to `tiny.en`. The local provider runs English-only on the
+CPU with `int8` compute. Model files may be downloaded by faster-whisper on the
+first request. If faster-whisper or the configured model is unavailable, only
+the transcription request returns an error; backend startup, `/health`, and
+`/npc/chat` remain available.
+
 ## Tests
 
 ```powershell

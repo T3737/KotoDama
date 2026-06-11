@@ -4,6 +4,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
+from app.api.speech import router as speech_router
 from app.game.npc_profiles import NpcProfileError, load_npc_profile
 from app.game.session_store import SessionStore
 from app.llm.ollama_client import OllamaClient, OllamaError
@@ -12,6 +13,7 @@ from app.llm.ollama_client import OllamaClient, OllamaError
 PROMPT_PATH = Path(__file__).parent / "prompts" / "npc_tutor.md"
 
 app = FastAPI(title="KotoDama NPC AI Backend")
+app.include_router(speech_router)
 session_store = SessionStore(max_messages=12)
 ollama_client = OllamaClient()
 

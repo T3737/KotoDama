@@ -1,10 +1,20 @@
 import asyncio
+import importlib
+import os
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 from app.game.npc_profiles import NpcProfileError, load_npc_profile
 from app import main
+from app.speech.stt_service import (
+    FasterWhisperSTTService,
+    STTUnavailableError,
+)
 
 
 class FakeOllamaClient:
@@ -91,6 +101,67 @@ class NpcRoutingTests(unittest.TestCase):
             main._npc_session_key("default_save:aiko", "haru"),
             "default_save:aiko:haru",
         )
+
+
+class SpeechTranscriptionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = TestClient(main.app)
+        self.original_mode = os.environ.get("STT_MODE")
+        self.original_model = os.environ.get("STT_MODEL")
+        os.environ["STT_MODE"] = "mock"
+        os.environ.pop("STT_MODEL", None)
+
+    def tearDown(self) -> None:
+        if self.original_mode is None:
+            os.environ.pop("STT_MODE", None)
+        else:
+            os.environ["STT_MODE"] = self.original_mode
+        if self.original_model is None:
+            os.environ.pop("STT_MODEL", None)
+        else:
+            os.environ["STT_MODEL"] = self.original_model
+
+    def test_mock_transcription(self) -> None:
+        response = self.client.post(
+            "/speech/transcribe",
+            files={"file": ("voice.wav", b"not-real-audio", "audio/wav")},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "transcript": "i would like to learn japanese",
+                "language": "en",
+                "status": "ok",
+            },
+        )
+
+    def test_empty_audio_is_rejected(self) -> None:
+        response = self.client.post(
+            "/speech/transcribe",
+            files={"file": ("voice.ogg", b"", "audio/ogg")},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("empty", response.json()["detail"].lower())
+
+    def test_unsupported_audio_extension_is_rejected(self) -> None:
+        response = self.client.post(
+            "/speech/transcribe",
+            files={"file": ("voice.txt", b"audio", "text/plain")},
+        )
+        self.assertEqual(response.status_code, 415)
+
+    def test_local_mode_missing_dependency_is_clear(self) -> None:
+        service = FasterWhisperSTTService("tiny.en")
+        with tempfile.NamedTemporaryFile(suffix=".wav") as audio_file:
+            with patch.object(
+                importlib,
+                "import_module",
+                side_effect=ModuleNotFoundError("faster_whisper"),
+            ):
+                with self.assertRaises(STTUnavailableError) as context:
+                    service.transcribe(Path(audio_file.name))
+        self.assertIn("requirements-stt.txt", str(context.exception))
 
 
 if __name__ == "__main__":
