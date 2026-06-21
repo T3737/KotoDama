@@ -1,0 +1,39 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/SceneDoor.gd" id="1_door"]
+
+[sub_resource type="RectangleShape2D" id="DoorShape"]
+size = Vector2(30, 42)
+
+[node name="SceneDoor" type="Area2D"]
+collision_layer = 0
+collision_mask = 1
+script = ExtResource("1_door")
+prompt_text = "Press E to enter"
+interaction_required = true
+
+[node name="Frame" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(-13, -21, 13, -21, 13, 21, -13, 21)
+color = Color(0.22, 0.13, 0.08, 1)
+
+[node name="Door" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(-9, -17, 9, -17, 9, 21, -9, 21)
+color = Color(0.68, 0.38, 0.16, 1)
+
+[node name="Knob" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(4, 1, 6, 1, 6, 3, 4, 3)
+color = Color(1, 0.85, 0.3, 1)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("DoorShape")
+
+[node name="PromptLabel" type="Label" parent="."]
+offset_left = -48.0
+offset_top = 25.0
+offset_right = 48.0
+offset_bottom = 39.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 8
+text = "Press E to enter"
+horizontal_alignment = 1
+visible = false

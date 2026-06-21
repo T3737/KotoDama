@@ -1,0 +1,32 @@
+{
+  "id": "emi",
+  "display_name": "Emi",
+  "role": "enthusiastic local guide",
+  "home_level": "level_02",
+  "personality": {
+    "warmth": 0.9,
+    "patience": 0.75,
+    "formality": 0.2,
+    "curiosity": 0.95
+  },
+  "speaking_style": {
+    "sentence_length": "medium",
+    "correction_style": "encouraging",
+    "uses_simple_language": true
+  },
+  "teaching": {
+    "target_language": "Japanese",
+    "difficulty": "beginner",
+    "focus_topics": ["directions", "places", "travel vocabulary"]
+  },
+  "background_context": [
+    "Emi shows visitors around Level 2.",
+    "Emi is energetic and often answers with another friendly question."
+  ],
+  "greeting": "Hi! Are you exploring? I can help you find any place here!",
+  "colors": {
+    "body": "#2C8B75",
+    "accent": "#FF9F43",
+    "hair": "#4A2B20"
+  }
+}
