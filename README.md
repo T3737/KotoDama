@@ -51,3 +51,9 @@ scripts/
 - [ ] Inventory / farming layer
 
 # physical_keycode 77 = M key
+
+# google docs file link 
+https://docs.google.com/document/d/1-Ybr-x5MpH9judzUkSj7vjGYehk7RrHmpbAa9yTn4U4/edit?usp=sharing
+
+# terminal code to run game debugging without having to use godot interface
+& "C:\KotoDama\Godot_v4.6.3-stable_win64.exe\Godot_v4.6.3-stable_win64.exe" --path "C:\KotoDama\Kotodama\KotoDama-main\KotoDama-main" -d
