@@ -33,7 +33,7 @@ var _current_level_id := ""
 func _ready() -> void:
 	add_to_group("level_loader")
 
-func load_level(path: String) -> void:
+func load_level(path: String, spawn_id: String = "") -> void:
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		push_error("LevelLoader: cannot open " + path)
@@ -53,7 +53,7 @@ func load_level(path: String) -> void:
 	_clear()
 	_build_tiles(data)
 	_place_props(data)
-	_set_spawn(data)
+	_set_spawn(data, spawn_id)
 	_play_music(data)
 
 	level_loaded.emit(_current_level_id)
@@ -188,12 +188,23 @@ func _make_colorect(prop: Dictionary) -> void:
 	_props.add_child(cr)
 
 func _make_npc(prop: Dictionary) -> void:
-	# Placeholder — wire to dialogue system when ready.
-	push_warning("LevelLoader: NPC placement not yet implemented for '%s'" % prop.get("id", "?"))
+	var scene: PackedScene = load("res://scenes/characters/NPC.tscn")
+	var npc: Node = scene.instantiate()
+	npc.position = Vector2(prop["x"], prop["y"])
+	npc.npc_id = prop.get("npc_id", "aiko")
+	_props.add_child(npc)
 
-func _set_spawn(data: Dictionary) -> void:
-	var spawn: Dictionary = data.get("spawn", {"x": 0, "y": 0})
-	_player.global_position = Vector2(spawn["x"], spawn["y"])
+func _set_spawn(data: Dictionary, spawn_id: String = "") -> void:
+	var spawns: Array = data.get("spawns", [])
+	if spawns.is_empty():
+		push_warning("LevelLoader: level has no spawns array")
+		return
+	var chosen: Dictionary = spawns[0]
+	for s in spawns:
+		if s.get("id", "") == spawn_id:
+			chosen = s
+			break
+	_player.global_position = Vector2(chosen["x"], chosen["y"])
 
 func _play_music(data: Dictionary) -> void:
 	if _music == null:
