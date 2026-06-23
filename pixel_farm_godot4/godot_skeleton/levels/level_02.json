@@ -17,5 +17,13 @@
   "props": [
     { "type": "npc", "npc_id": "haru", "x": -256, "y": -34 },
     { "type": "npc", "npc_id": "emi",  "x": 415,  "y": 154 }
+  ],
+  "exits": [
+    {
+      "x": -900, "y": 34,
+      "target_level": "level_01",
+      "destination_spawn_id": "level_01_return",
+      "trigger": "interact"
+    }
   ]
 }

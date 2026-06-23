@@ -18,5 +18,13 @@
   ],
   "props": [
     { "type": "npc", "npc_id": "aiko", "x": 290, "y": 30 }
+  ],
+  "exits": [
+    {
+      "x": 900, "y": 30,
+      "target_level": "level_02",
+      "destination_spawn_id": "level_02_entrance",
+      "trigger": "interact"
+    }
   ]
 }
