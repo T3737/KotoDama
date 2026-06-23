@@ -1,4 +1,4 @@
-# KotoDama FastAPI Dialogue Backend
+# KotoDama FastAPI Dialogue And Session Backend
 
 The backend exposes one reusable local Ollama model as a dialogue engine for
 multiple independently configured NPCs.
@@ -23,7 +23,58 @@ Health check:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/health
+Invoke-RestMethod http://127.0.0.1:8000/ready
 ```
+
+`/health` reports process health and stays healthy when optional local services
+are unavailable. `/ready` additionally reports current Ollama reachability,
+`STT_MODE`, and WebSocket support.
+
+## WebSocket Voice Session Foundation
+
+The canonical session transport is:
+
+```text
+ws://127.0.0.1:8000/voice/session
+```
+
+Despite the route name, this milestone carries JSON text events only. Every
+event uses an envelope with `type`, `session_id`, unique `event_id`, ISO-8601
+`timestamp`, and an object `payload`:
+
+```json
+{
+  "type": "session.start",
+  "session_id": "default_save:haru",
+  "event_id": "client-generated-id",
+  "timestamp": "2026-06-23T10:00:00Z",
+  "payload": {"npc_id": "haru", "scene_context": "At the market."}
+}
+```
+
+Client events are `session.start`, `player.text`, `session.close`, and `ping`.
+Server events are `session.ready`, `state.changed`, `npc.text.delta`,
+`npc.text.final`, `error`, and `pong`. The current Ollama adapter is
+non-streaming, so it sends one `npc.text.final`; it does not manufacture delta
+events. Errors include stable `code`, human-readable `message`, and `fatal`.
+
+The canonical state set is `DISCONNECTED`, `CONNECTING`, `READY`, `LISTENING`,
+`TRANSCRIBING`, `GENERATING`, `SPEAKING`, and `ERROR`. Text turns use:
+
+```text
+CONNECTING -> READY -> GENERATING -> READY
+```
+
+Invalid transitions and overlapping player turns are rejected. A generation
+failure emits a non-fatal error and returns the session to `READY`; `ERROR` is
+reserved for unrecoverable session failures. Each WebSocket owns its lifecycle
+and turn lock, while both WebSocket and `/npc/chat` delegate to the same NPC
+orchestrator and NPC-namespaced memory store.
+
+Manual WebSocket test (with any WebSocket client): connect to the URL above,
+send `session.start`, wait for `session.ready`, then send the same envelope with
+type `player.text` and payload `{"text":"Hello"}`. Expect `GENERATING`, one
+`npc.text.final`, then `READY`. Send `session.close` to finish cleanly.
 
 ## Dialogue Request
 
@@ -148,5 +199,13 @@ cd backend
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-The tests cover profile distinction, unknown IDs, structured responses,
-NPC-private prompt context, forced session namespaces, and legacy requests.
+The tests cover the existing HTTP and speech routes plus session start, text
+round trips, state order, malformed/unsupported events, pre-start messages,
+overlap rejection, ping/pong, invalid transitions, readiness, and clean close.
+
+## Deferred Work
+
+Microphone streaming, binary audio frames, VAD, streaming STT, TTS audio,
+interruption/barge-in, training, LoRA, and database persistence are explicitly
+outside this foundation. Recorded WAV transcription remains the existing HTTP
+flow and its transcript can be submitted as ordinary session text.

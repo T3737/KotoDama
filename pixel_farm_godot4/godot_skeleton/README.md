@@ -30,7 +30,8 @@ http://127.0.0.1:8000/speech/transcribe
 ```
 
 The returned English transcript is shown in the voice status line and copied
-into the existing text field for editing before it is sent to `/npc/chat`.
+into the existing text field for editing. Sending it then follows the same
+WebSocket-first text path as typed input.
 
 Start the backend in mock STT mode for the simplest test:
 
@@ -58,8 +59,11 @@ NPC interaction
     v
 AIDialogueDemo persistent controller
     |
-    v
-FastAPI /npc/chat
+    +--> AIVoiceSessionClient --> /voice/session (preferred text path)
+    |
+    +--> AIBackendClient --> /npc/chat (connection fallback)
+    |
+    +--> AIBackendClient --> /speech/transcribe (recorded WAV)
     |
     +--> NPC profile JSON
     |
@@ -70,6 +74,14 @@ FastAPI /npc/chat
     v
 Reusable local Ollama model
 ```
+
+Opening dialogue creates a fresh `default_save:<npc_id>` WebSocket session.
+`AIVoiceSessionClient.gd` polls `WebSocketPeer`, validates JSON envelopes,
+handles ping/pong, and exposes transport signals without NPC UI behavior. Typed
+Send uses `player.text`; `npc.text.final` is passed to the existing conversation
+and save flow. Closing dialogue sends `session.close`. If connection, timeout,
+or send fails, the controller keeps `/npc/chat` as a non-destructive fallback.
+The existing recording and multipart transcription code is unchanged.
 
 `AIDialogueDemo.tscn` keeps the player, dialogue UI, HTTP client, and
 `LevelContainer` alive. Only the child level scene is replaced during a door
@@ -143,6 +155,11 @@ malformed saves fall back to defaults.
 7. Use the return door.
 8. Talk to Aiko and confirm the earlier conversation remains in the panel.
 9. Restart the game and confirm the saved current level and histories reload.
+10. With the backend running, confirm the panel changes from `Connecting...` to
+    `Ready`, and typed dialogue arrives through the WebSocket.
+11. Stop/restart the backend or point the session URL at an unused port; confirm
+    the status shows `HTTP fallback` and `/npc/chat` still handles typed text.
+12. Close and reopen dialogue and confirm a new clean session becomes ready.
 
 Haru should be formal and direct. Emi should be energetic and ask more
 questions. Neither receives Aiko's private history.

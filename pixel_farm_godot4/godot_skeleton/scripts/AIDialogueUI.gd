@@ -76,6 +76,10 @@ func set_thinking(thinking: bool) -> void:
 	status_label.modulate = Color(1.0, 0.85, 0.45) if thinking else Color(0.65, 0.85, 0.7)
 	_refresh_controls()
 
+func set_session_status(text: String, is_error: bool = false) -> void:
+	status_label.text = text
+	status_label.modulate = Color(1.0, 0.4, 0.4) if is_error else Color(0.65, 0.85, 0.7)
+
 func is_request_active() -> bool:
 	return _chat_busy or _voice_state != "ready"
 
