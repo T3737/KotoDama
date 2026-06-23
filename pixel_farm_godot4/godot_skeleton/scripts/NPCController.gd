@@ -8,9 +8,7 @@ signal dialogue_requested(npc: NPCController)
 var profile: Dictionary = {}
 
 @onready var name_label: Label = $NameLabel
-@onready var body_polygon: Polygon2D = $Body
-@onready var accent_polygon: Polygon2D = $Accent
-@onready var hair_polygon: Polygon2D = $Hair
+@onready var sprite: Sprite2D = $Sprite
 
 func _ready() -> void:
 	super._ready()
@@ -21,10 +19,7 @@ func _ready() -> void:
 		monitoring = false
 		return
 	name_label.text = str(profile.get("display_name", npc_id.capitalize()))
-	var colors: Dictionary = profile.get("colors", {})
-	body_polygon.color = Color.from_string(str(colors.get("body", "#405CC7")), Color.BLUE)
-	accent_polygon.color = Color.from_string(str(colors.get("accent", "#F2CC59")), Color.YELLOW)
-	hair_polygon.color = Color.from_string(str(colors.get("hair", "#331A14")), Color.DARK_GRAY)
+	sprite.texture = load("res://assets/npcs/%s.png" % npc_id)
 
 func _on_interact(_player: Node) -> void:
 	if not profile.is_empty():
