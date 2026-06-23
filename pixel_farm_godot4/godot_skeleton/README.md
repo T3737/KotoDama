@@ -17,21 +17,31 @@ Controls:
 | E | Talk or use a door |
 | Enter | Submit dialogue while the text box is focused |
 
-## Voice Input Prototype
+## Voice Input
 
-The isolated AI dialogue panel includes `Record` and `Stop / Transcribe`
-buttons. Recording uses Godot's native `AudioStreamMicrophone`, routed through
-the muted `Record` bus and its `AudioEffectRecord`. It writes a temporary
-16-bit WAV to `user://voice_recording.wav` and sends it as multipart form field
-`file` to:
+The dialogue panel includes `Record` and `Stop / Transcribe`. The preferred
+path uses `AIVoiceCapture.gd`, `AudioStreamMicrophone`, and a muted
+`VoiceCapture` bus with `AudioEffectCapture`. It periodically converts frames
+to mono signed PCM16 little-endian at the actual mix rate and sends binary
+packets over:
+
+```text
+ws://127.0.0.1:8000/voice/session
+```
+
+The backend returns `transcript.final`. `confirm_transcript` is the default and
+copies the visible transcript into the text field. The `AIDialogueDemo` node
+can instead select `auto_send_transcript` to route it directly to the NPC.
+
+The older `AIVoiceRecorder` remains as a connection fallback. It uses the
+muted `Record` bus and `AudioEffectRecord`, writes a temporary 16-bit WAV, and
+sends multipart field `file` to:
 
 ```text
 http://127.0.0.1:8000/speech/transcribe
 ```
 
-The returned English transcript is shown in the voice status line and copied
-into the existing text field for editing. Sending it then follows the same
-WebSocket-first text path as typed input.
+Both paths preserve typed input and use local loopback services only.
 
 Start the backend in mock STT mode for the simplest test:
 
@@ -47,6 +57,9 @@ microphone permission in operating-system privacy settings. Exported mobile
 builds also require the platform's microphone permission configuration.
 On Windows, check `Settings > Privacy & security > Microphone` and allow
 microphone access for desktop applications/Godot if the saved file is empty.
+Godot logs the active input driver/device, capture bus/effect readiness,
+available frames, and transmitted bytes. If no frames arrive, the UI points to
+the selected system input device instead of showing a generic backend error.
 
 ## Architecture
 
@@ -59,7 +72,7 @@ NPC interaction
     v
 AIDialogueDemo persistent controller
     |
-    +--> AIVoiceSessionClient --> /voice/session (preferred text path)
+    +--> AIVoiceCapture --> AIVoiceSessionClient --> /voice/session (PCM + text)
     |
     +--> AIBackendClient --> /npc/chat (connection fallback)
     |
@@ -77,11 +90,11 @@ Reusable local Ollama model
 
 Opening dialogue creates a fresh `default_save:<npc_id>` WebSocket session.
 `AIVoiceSessionClient.gd` polls `WebSocketPeer`, validates JSON envelopes,
-handles ping/pong, and exposes transport signals without NPC UI behavior. Typed
-Send uses `player.text`; `npc.text.final` is passed to the existing conversation
-and save flow. Closing dialogue sends `session.close`. If connection, timeout,
-or send fails, the controller keeps `/npc/chat` as a non-destructive fallback.
-The existing recording and multipart transcription code is unchanged.
+handles ping/pong, JSON events, and ordered binary audio without NPC UI
+behavior. Typed Send uses `player.text`; `transcript.final` and
+`npc.text.final` feed the existing UI/save flow. Closing dialogue stops capture
+and sends `session.close`. If the socket fails, `/npc/chat` and recorded-WAV
+transcription remain non-destructive fallbacks.
 
 `AIDialogueDemo.tscn` keeps the player, dialogue UI, HTTP client, and
 `LevelContainer` alive. Only the child level scene is replaced during a door

@@ -6,6 +6,9 @@ signal session_ready
 signal state_changed(state: String)
 signal npc_text_delta(text: String)
 signal npc_text_final(payload: Dictionary)
+signal audio_ready(payload: Dictionary)
+signal audio_received(payload: Dictionary)
+signal transcript_final(payload: Dictionary)
 signal session_error(code: String, message: String, fatal: bool)
 signal disconnected
 
@@ -22,6 +25,8 @@ var _intentional_close := false
 var _connect_started_ms := 0
 var _last_ping_ms := 0
 var _last_state := WebSocketPeer.STATE_CLOSED
+var _conversation_state := "DISCONNECTED"
+var _audio_sending := false
 
 func _process(_delta: float) -> void:
 	if _socket == null:
@@ -63,6 +68,8 @@ func start_session(session_id: String, npc_id: String, context: Dictionary = {})
 	_start_payload["npc_id"] = npc_id
 	_session_ready = false
 	_start_sent = false
+	_audio_sending = false
+	_conversation_state = "CONNECTING"
 	_intentional_close = false
 	_socket = WebSocketPeer.new()
 	_last_state = WebSocketPeer.STATE_CONNECTING
@@ -73,12 +80,46 @@ func start_session(session_id: String, npc_id: String, context: Dictionary = {})
 
 func send_player_text(text: String) -> bool:
 	var clean_text := text.strip_edges()
-	if not _session_ready or clean_text.is_empty():
+	if not _session_ready or _conversation_state != "READY" or clean_text.is_empty():
 		return false
 	return _send_event("player.text", {"text": clean_text})
 
+func start_audio(sample_rate: int, auto_send_transcript: bool = false) -> bool:
+	if not _session_ready or _conversation_state != "READY" or _audio_sending:
+		return false
+	_audio_sending = _send_event(
+		"audio.start",
+		{
+			"sample_rate": sample_rate,
+			"channels": 1,
+			"encoding": "pcm_s16le",
+			"auto_send_transcript": auto_send_transcript,
+		}
+	)
+	return _audio_sending
+
+func send_audio_frame(audio_bytes: PackedByteArray) -> bool:
+	if not _audio_sending or audio_bytes.is_empty():
+		return false
+	if _socket == null or _socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		_audio_sending = false
+		return false
+	var error := _socket.send(audio_bytes, WebSocketPeer.WRITE_MODE_BINARY)
+	if error != OK:
+		_audio_sending = false
+		session_error.emit("send_failed", "Could not send microphone audio (error %d)." % error, false)
+		return false
+	return true
+
+func stop_audio(reason: String = "player_released") -> bool:
+	if not _audio_sending:
+		return false
+	var sent := _send_event("audio.stop", {"reason": reason})
+	_audio_sending = false
+	return sent
+
 func is_session_ready() -> bool:
-	return _session_ready
+	return _session_ready and _conversation_state == "READY"
 
 func close_session() -> void:
 	if _socket == null:
@@ -90,6 +131,8 @@ func close_session() -> void:
 	_socket = null
 	_session_ready = false
 	_start_sent = false
+	_audio_sending = false
+	_conversation_state = "DISCONNECTED"
 	disconnected.emit()
 
 func _send_session_start() -> void:
@@ -130,14 +173,24 @@ func _handle_packet(text: String) -> void:
 	match event_type:
 		"session.ready":
 			_session_ready = true
+			_conversation_state = str(payload.get("state", "READY"))
 			_last_ping_ms = Time.get_ticks_msec()
 			session_ready.emit()
 		"state.changed":
-			state_changed.emit(str(payload.get("state", "")))
+			_conversation_state = str(payload.get("state", ""))
+			if _conversation_state != "LISTENING":
+				_audio_sending = false
+			state_changed.emit(_conversation_state)
 		"npc.text.delta":
 			npc_text_delta.emit(str(payload.get("text", "")))
 		"npc.text.final":
 			npc_text_final.emit(payload)
+		"audio.ready":
+			audio_ready.emit(payload)
+		"audio.received":
+			audio_received.emit(payload)
+		"transcript.final":
+			transcript_final.emit(payload)
 		"error":
 			session_error.emit(
 				str(payload.get("code", "unknown_error")),
@@ -154,6 +207,8 @@ func _handle_closed() -> void:
 	_socket = null
 	_session_ready = false
 	_start_sent = false
+	_audio_sending = false
+	_conversation_state = "DISCONNECTED"
 	if not was_intentional:
 		session_error.emit("connection_closed", "WebSocket connection closed.", false)
 	disconnected.emit()
@@ -163,6 +218,8 @@ func _fail_connection(code: String, message: String) -> void:
 		_socket.close()
 	_socket = null
 	_session_ready = false
+	_audio_sending = false
+	_conversation_state = "DISCONNECTED"
 	session_error.emit(code, message, false)
 	disconnected.emit()
 

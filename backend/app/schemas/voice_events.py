@@ -28,6 +28,17 @@ class PlayerTextPayload(EventModel):
     text: str = Field(min_length=1)
 
 
+class AudioStartPayload(EventModel):
+    sample_rate: int = Field(ge=8000, le=96000)
+    channels: int = Field(ge=1, le=2)
+    encoding: str
+    auto_send_transcript: bool = False
+
+
+class AudioStopPayload(EventModel):
+    reason: str = "player_released"
+
+
 class EmptyPayload(EventModel):
     pass
 
@@ -48,6 +59,16 @@ class PlayerTextEvent(ClientEventBase):
     payload: PlayerTextPayload
 
 
+class AudioStartEvent(ClientEventBase):
+    type: Literal["audio.start"]
+    payload: AudioStartPayload
+
+
+class AudioStopEvent(ClientEventBase):
+    type: Literal["audio.stop"]
+    payload: AudioStopPayload = Field(default_factory=AudioStopPayload)
+
+
 class SessionCloseEvent(ClientEventBase):
     type: Literal["session.close"]
     payload: EmptyPayload = Field(default_factory=EmptyPayload)
@@ -58,8 +79,22 @@ class PingEvent(ClientEventBase):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
-ClientEvent = SessionStartEvent | PlayerTextEvent | SessionCloseEvent | PingEvent
-CLIENT_EVENT_TYPES = {"session.start", "player.text", "session.close", "ping"}
+ClientEvent = (
+    SessionStartEvent
+    | PlayerTextEvent
+    | AudioStartEvent
+    | AudioStopEvent
+    | SessionCloseEvent
+    | PingEvent
+)
+CLIENT_EVENT_TYPES = {
+    "session.start",
+    "player.text",
+    "audio.start",
+    "audio.stop",
+    "session.close",
+    "ping",
+}
 _client_event_adapter = TypeAdapter(ClientEvent)
 
 
@@ -73,6 +108,9 @@ class ServerEvent(EventModel):
         "state.changed",
         "npc.text.delta",
         "npc.text.final",
+        "audio.ready",
+        "audio.received",
+        "transcript.final",
         "error",
         "pong",
     ]

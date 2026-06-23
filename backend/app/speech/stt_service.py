@@ -72,6 +72,7 @@ class FasterWhisperSTTService(SpeechToTextService):
                 self.model_name,
                 device="cpu",
                 compute_type="int8",
+                local_files_only=True,
             )
         except Exception as exc:
             raise STTUnavailableError(

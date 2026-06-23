@@ -16,7 +16,7 @@ from app.orchestration.npc_orchestrator import (
     npc_session_key,
     validated_private_history,
 )
-from app.speech.stt_service import get_stt_mode
+from app.speech.stt_service import create_stt_service, get_stt_mode
 
 
 app = FastAPI(title="KotoDama NPC AI Backend")
@@ -27,6 +27,7 @@ ollama_client = OllamaClient()
 npc_orchestrator = NpcOrchestrator(session_store)
 app.state.ollama_client = ollama_client
 app.state.npc_orchestrator = npc_orchestrator
+app.state.stt_service_factory = create_stt_service
 
 
 class NpcChatRequest(BaseModel):
