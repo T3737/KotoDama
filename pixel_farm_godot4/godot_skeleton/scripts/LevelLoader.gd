@@ -33,6 +33,8 @@ const TILE_SOURCE_IDS := {
 
 var _current_level_id := ""
 var _pending_exit: Dictionary = {}
+var current_level_tiles: Array = []
+var current_level_exits: Array = []
 
 func _ready() -> void:
 	add_to_group("level_loader")
@@ -66,6 +68,7 @@ func load_level(path: String, spawn_id: String = "") -> void:
 	_place_props(data)
 	_place_exits(data)
 	_set_spawn(data, spawn_id)
+	current_level_exits = data.get("exits", [])
 	_play_music(data)
 
 	level_loaded.emit(_current_level_id)
@@ -109,6 +112,7 @@ func _build_tiles(data: Dictionary) -> void:
 
 	# Now fill tiles
 	var w: int = map.get("width",  32)
+	current_level_tiles = map.get("tiles", [])
 	var h: int = map.get("height", 24)
 	var hw := w / 2
 	var hh := h / 2
@@ -226,6 +230,18 @@ func _make_exit(exit_data: Dictionary) -> void:
 	var trigger: String = exit_data.get("trigger", "interact")
 	var target_level: String = exit_data.get("target_level", "")
 	var destination_spawn_id: String = exit_data.get("destination_spawn_id", "")
+
+	var marker := ColorRect.new()
+	marker.color = Color(0.68, 0.38, 0.16, 1)
+	marker.offset_left   = -15.0; marker.offset_right  = 15.0
+	marker.offset_top    = -21.0; marker.offset_bottom = 21.0
+	area.add_child(marker)
+
+	var knob := ColorRect.new()
+	knob.color = Color(1.0, 0.85, 0.3, 1)
+	knob.offset_left   = 5.0; knob.offset_right  = 9.0
+	knob.offset_bottom = 3.0; knob.offset_top    = -1.0
+	area.add_child(knob)
 
 	var label := Label.new()
 	label.text    = "Press E to leave" if trigger == "interact" else ""

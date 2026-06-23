@@ -25,6 +25,12 @@
       "target_level": "level_02",
       "destination_spawn_id": "level_02_entrance",
       "trigger": "interact"
+    },
+    {
+      "x": -900, "y": 30,
+      "target_level": "farm",
+      "destination_spawn_id": "farm_start",
+      "trigger": "interact"
     }
   ]
 }
