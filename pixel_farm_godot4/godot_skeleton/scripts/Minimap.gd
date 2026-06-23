@@ -22,6 +22,7 @@ const C_WATER := Color(0.15, 0.4,  0.75)
 const C_PATH  := Color(0.72, 0.62, 0.42)
 const C_PLAYER:= Color(1.0,  0.9,  0.1)
 const C_BG    := Color(0.05, 0.05, 0.05, 0.82)
+const C_NPC := Color(1.0, 0.4, 0.4)
 
 const TILE_COLORS := {
 	"grass": C_GRASS,
@@ -101,6 +102,14 @@ func _on_draw() -> void:
 		var ty := float(exit.get("y", 0)) / TILE
 		var px := origin + Vector2((tx + half_w) * scale, (ty + half_h) * scale)
 		_canvas.draw_rect(Rect2(px - Vector2(scale, scale), Vector2(scale * 2, scale * 2)), C_EXIT)
+
+	# NPC dots
+	for npc in get_tree().get_nodes_in_group("ai_npc"):
+		var ntx := float(npc.global_position.x) / TILE
+		var nty := float(npc.global_position.y) / TILE
+		var npx := origin + Vector2((ntx + half_w) * scale, (nty + half_h) * scale)
+		var nr: float = max(1.5, scale * 0.35)
+		_canvas.draw_circle(npx, nr, C_NPC)
 
 	# Player dot
 	if _player != null:
