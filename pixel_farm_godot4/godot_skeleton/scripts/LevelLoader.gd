@@ -2,6 +2,9 @@ extends Node
 
 # Emitted when a level finishes loading.
 signal level_loaded(level_id: String)
+# Emitted when the player triggers an exit zone (walk or interact). Listener
+# (e.g. World.gd) decides whether/how to actually switch levels.
+signal exit_triggered(target_level: String, destination_spawn_id: String)
 
 const TILE_COLORS := {
 	"grass": Color(0.25, 0.55, 0.2),
@@ -29,9 +32,19 @@ const TILE_SOURCE_IDS := {
 @onready var _music:        AudioStreamPlayer = get_node_or_null(music_player_path)
 
 var _current_level_id := ""
+var _pending_exit: Dictionary = {}
+var current_level_tiles: Array = []
+var current_level_exits: Array = []
 
 func _ready() -> void:
 	add_to_group("level_loader")
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("interact") and not _pending_exit.is_empty():
+		exit_triggered.emit(
+			_pending_exit.get("target_level", ""),
+			_pending_exit.get("destination_spawn_id", "")
+		)
 
 func load_level(path: String, spawn_id: String = "") -> void:
 	var file := FileAccess.open(path, FileAccess.READ)
@@ -53,7 +66,9 @@ func load_level(path: String, spawn_id: String = "") -> void:
 	_clear()
 	_build_tiles(data)
 	_place_props(data)
+	_place_exits(data)
 	_set_spawn(data, spawn_id)
+	current_level_exits = data.get("exits", [])
 	_play_music(data)
 
 	level_loaded.emit(_current_level_id)
@@ -64,6 +79,7 @@ func _clear() -> void:
 	_tilemap.clear()
 	for child in _props.get_children():
 		child.queue_free()
+	_pending_exit = {}
 
 func _build_tiles(data: Dictionary) -> void:
 	var map: Dictionary = data.get("map", {})
@@ -96,6 +112,7 @@ func _build_tiles(data: Dictionary) -> void:
 
 	# Now fill tiles
 	var w: int = map.get("width",  32)
+	current_level_tiles = map.get("tiles", [])
 	var h: int = map.get("height", 24)
 	var hw := w / 2
 	var hh := h / 2
@@ -194,6 +211,54 @@ func _make_npc(prop: Dictionary) -> void:
 	npc.npc_id = prop.get("npc_id", "aiko")
 	_props.add_child(npc)
 
+func _place_exits(data: Dictionary) -> void:
+	for exit_data in data.get("exits", []):
+		_make_exit(exit_data)
+
+func _make_exit(exit_data: Dictionary) -> void:
+	var area := Area2D.new()
+	area.position = Vector2(exit_data["x"], exit_data["y"])
+	area.collision_layer = 0
+	area.collision_mask  = 1
+
+	var col := CollisionShape2D.new()
+	var shape := RectangleShape2D.new()
+	shape.size = Vector2(32, 32)
+	col.shape = shape
+	area.add_child(col)
+
+	var trigger: String = exit_data.get("trigger", "interact")
+	var target_level: String = exit_data.get("target_level", "")
+	var destination_spawn_id: String = exit_data.get("destination_spawn_id", "")
+
+	var marker := ColorRect.new()
+	marker.color = Color(0.68, 0.38, 0.16, 1)
+	marker.offset_left   = -15.0; marker.offset_right  = 15.0
+	marker.offset_top    = -21.0; marker.offset_bottom = 21.0
+	area.add_child(marker)
+
+	var knob := ColorRect.new()
+	knob.color = Color(1.0, 0.85, 0.3, 1)
+	knob.offset_left   = 5.0; knob.offset_right  = 9.0
+	knob.offset_bottom = 3.0; knob.offset_top    = -1.0
+	area.add_child(knob)
+
+	var label := Label.new()
+	label.text    = "Press E to leave" if trigger == "interact" else ""
+	label.visible = false
+	label.add_theme_font_size_override("font_size", 6)
+	label.offset_left = -32.0; label.offset_right  = 32.0
+	label.offset_top  = -24.0; label.offset_bottom = -14.0
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	area.add_child(label)
+
+	area.body_entered.connect(
+		_on_exit_entered.bind(area, label, trigger, target_level, destination_spawn_id)
+	)
+	area.body_exited.connect(_on_exit_exited.bind(area, label, trigger))
+
+	_props.add_child(area)
+
 func _set_spawn(data: Dictionary, spawn_id: String = "") -> void:
 	var spawns: Array = data.get("spawns", [])
 	if spawns.is_empty():
@@ -232,3 +297,25 @@ func _on_interactable_exited(body: Node, _area: Area2D, label: Label) -> void:
 	label.visible = false
 	if body.has_method("clear_interactable_data"):
 		body.clear_interactable_data()
+
+func _on_exit_entered(
+	body: Node, _area: Area2D, label: Label,
+	trigger: String, target_level: String, destination_spawn_id: String
+) -> void:
+	if not body.is_in_group("player"):
+		return
+	if trigger == "walk":
+		exit_triggered.emit(target_level, destination_spawn_id)
+		return
+	label.visible = true
+	_pending_exit = {
+		"target_level": target_level,
+		"destination_spawn_id": destination_spawn_id,
+	}
+
+func _on_exit_exited(body: Node, _area: Area2D, label: Label, trigger: String) -> void:
+	if not body.is_in_group("player"):
+		return
+	if trigger == "interact":
+		label.visible = false
+		_pending_exit = {}

@@ -60,9 +60,10 @@
     }
   ],
   "exits": [
-    {
-      "x": -140, "y": 74,
-      "target_level": "house_interior",
+        {
+      "x": 896, "y": 0,
+      "target_level": "level_01",
+      "destination_spawn_id": "level_01_start",
       "trigger": "interact"
     }
   ]

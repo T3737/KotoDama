@@ -1,0 +1,26 @@
+{
+  "id": "house_interior",
+  "display_name": "Farmhouse Interior",
+  "music": "",
+  "map": {
+    "width": 16,
+    "height": 12,
+    "tileset": "",
+    "tile_size": 64,
+    "tiles": [
+      { "x": -8, "y": -6, "w": 16, "h": 12, "type": "path" }
+    ]
+  },
+  "spawns": [
+    { "id": "house_interior_entrance", "x": 0, "y": 192 }
+  ],
+  "props": [],
+  "exits": [
+    {
+      "x": 0, "y": 256,
+      "target_level": "farm",
+      "destination_spawn_id": "farm_start",
+      "trigger": "interact"
+    }
+  ]
+}

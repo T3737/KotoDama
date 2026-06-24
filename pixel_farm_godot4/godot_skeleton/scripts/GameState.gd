@@ -2,8 +2,8 @@ extends Node
 
 const SAVE_VERSION := 1
 const SAVE_PATH := "user://koto_dama_demo_save.json"
-const DEFAULT_LEVEL := "level_01"
-const DEFAULT_SPAWN := "level_01_start"
+const DEFAULT_LEVEL := "farm"
+const DEFAULT_SPAWN := "farm_start"
 
 var current_level_id := DEFAULT_LEVEL
 var destination_spawn_id := DEFAULT_SPAWN

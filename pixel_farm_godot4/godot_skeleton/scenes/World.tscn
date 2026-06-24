@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3 uid="uid://world"]
+[gd_scene load_steps=14 format=3 uid="uid://world"]
 
 [ext_resource type="PackedScene" uid="uid://player" path="res://scenes/Player.tscn" id="1"]
 [ext_resource type="Script" uid="uid://bfqpkkfwv87tr" path="res://scripts/World.gd" id="2"]
@@ -7,9 +7,33 @@
 [ext_resource type="PackedScene" uid="uid://minimap" path="res://scenes/Minimap.tscn" id="5"]
 [ext_resource type="PackedScene" uid="uid://inventoryui" path="res://scenes/InventoryUI.tscn" id="6"]
 [ext_resource type="PackedScene" path="res://scenes/StaminaBar.tscn" id="7"]
+[ext_resource type="Script" path="res://scripts/AIDialogueUI.gd" id="8"]
+[ext_resource type="Script" path="res://scripts/AIBackendClient.gd" id="9"]
+[ext_resource type="Script" path="res://scripts/AIVoiceRecorder.gd" id="10"]
 
 [sub_resource type="TileSet" id="TileSet_1"]
 tile_size = Vector2i(64, 64)
+
+[sub_resource type="StyleBoxFlat" id="DialoguePanelStyle"]
+bg_color = Color(0.07, 0.09, 0.14, 0.96)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.35, 0.68, 0.82, 1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+
+[sub_resource type="StyleBoxFlat" id="NameStyle"]
+bg_color = Color(0.15, 0.34, 0.42, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="AudioStreamMicrophone" id="AudioStreamMicrophone_voice"]
 
 [node name="World" type="Node2D"]
 script = ExtResource("2")
@@ -40,3 +64,106 @@ music_player_path = NodePath("../Music")
 [node name="InventoryUI" parent="." instance=ExtResource("6")]
 
 [node name="StaminaBar" parent="." instance=ExtResource("7")]
+
+[node name="DialogueUI" type="CanvasLayer" parent="."]
+script = ExtResource("8")
+
+[node name="Panel" type="Panel" parent="DialogueUI"]
+offset_left = 8.0
+offset_top = 26.0
+offset_right = 312.0
+offset_bottom = 176.0
+theme_override_styles/panel = SubResource("DialoguePanelStyle")
+
+[node name="NPCName" type="Label" parent="DialogueUI/Panel"]
+offset_left = 8.0
+offset_top = 7.0
+offset_right = 80.0
+offset_bottom = 25.0
+theme_override_font_sizes/font_size = 11
+theme_override_styles/normal = SubResource("NameStyle")
+text = "NPC"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="CloseButton" type="Button" parent="DialogueUI/Panel"]
+offset_left = 252.0
+offset_top = 5.0
+offset_right = 294.0
+offset_bottom = 27.0
+theme_override_font_sizes/font_size = 9
+text = "Close"
+
+[node name="Conversation" type="RichTextLabel" parent="DialogueUI/Panel"]
+offset_left = 8.0
+offset_top = 32.0
+offset_right = 296.0
+offset_bottom = 82.0
+theme_override_font_sizes/normal_font_size = 9
+bbcode_enabled = true
+fit_content = false
+scroll_following = true
+
+[node name="Status" type="Label" parent="DialogueUI/Panel"]
+offset_left = 9.0
+offset_top = 83.0
+offset_right = 294.0
+offset_bottom = 95.0
+theme_override_font_sizes/font_size = 8
+text = "Ready"
+
+[node name="TranscriptStatus" type="Label" parent="DialogueUI/Panel"]
+offset_left = 9.0
+offset_top = 96.0
+offset_right = 294.0
+offset_bottom = 108.0
+theme_override_font_sizes/font_size = 7
+text = "Voice: Ready"
+text_overrun_behavior = 3
+
+[node name="PlayerInput" type="LineEdit" parent="DialogueUI/Panel"]
+offset_left = 8.0
+offset_top = 109.0
+offset_right = 242.0
+offset_bottom = 130.0
+theme_override_font_sizes/font_size = 9
+placeholder_text = "Type a message..."
+clear_button_enabled = true
+
+[node name="SendButton" type="Button" parent="DialogueUI/Panel"]
+offset_left = 247.0
+offset_top = 109.0
+offset_right = 296.0
+offset_bottom = 130.0
+theme_override_font_sizes/font_size = 9
+text = "Send"
+
+[node name="RecordButton" type="Button" parent="DialogueUI/Panel"]
+offset_left = 8.0
+offset_top = 132.0
+offset_right = 102.0
+offset_bottom = 148.0
+theme_override_font_sizes/font_size = 7
+text = "Record"
+
+[node name="TranscribeButton" type="Button" parent="DialogueUI/Panel"]
+offset_left = 106.0
+offset_top = 132.0
+offset_right = 238.0
+offset_bottom = 148.0
+theme_override_font_sizes/font_size = 7
+text = "Stop / Transcribe"
+disabled = true
+
+[node name="AIBackendClient" type="Node" parent="."]
+script = ExtResource("9")
+
+[node name="AIVoiceRecorder" type="Node" parent="."]
+script = ExtResource("10")
+
+[node name="AudioStreamRecord" type="AudioStreamPlayer" parent="AIVoiceRecorder"]
+stream = SubResource("AudioStreamMicrophone_voice")
+autoplay = true
+bus = &"Record"
+
+[node name="Playback" type="AudioStreamPlayer" parent="AIVoiceRecorder"]

@@ -6,13 +6,15 @@ const STAMINA_MAX := 100.0
 const STAMINA_DRAIN := 30.0
 const STAMINA_REGEN := 20.0
 
-@onready var sprite: ColorRect = $Sprite
+@onready var sprite: Sprite2D = $Sprite
 @onready var anim: AnimationPlayer = $AnimationPlayer
 
 var facing := Vector2.DOWN
 var _interact_data: Dictionary = {}
+var _interactable: Interactable = null
 var _stamina := STAMINA_MAX
 var _stamina_bar: Node = null
+var _movement_enabled := true
 
 
 func _ready() -> void:
@@ -25,6 +27,10 @@ func _find_stamina_bar() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if not _movement_enabled:
+		velocity = Vector2.ZERO
+		return
+
 	var direction := Vector2(
 		Input.get_axis("ui_left", "ui_right"),
 		Input.get_axis("ui_up", "ui_down"),
@@ -51,7 +57,11 @@ func _physics_process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("interact") and not _interact_data.is_empty():
+	if not _movement_enabled or not event.is_action_pressed("interact"):
+		return
+	if _interactable != null:
+		_interactable.interact(self)
+	if not _interact_data.is_empty():
 		_handle_interact(_interact_data)
 
 
@@ -61,6 +71,23 @@ func set_interactable_data(data: Dictionary) -> void:
 
 func clear_interactable_data() -> void:
 	_interact_data = {}
+
+
+func set_interactable(interactable: Interactable) -> void:
+	_interactable = interactable
+
+
+func clear_interactable(interactable: Interactable) -> void:
+	if _interactable == interactable:
+		_interactable = null
+
+
+func set_movement_enabled(enabled: bool) -> void:
+	_movement_enabled = enabled
+	if not enabled:
+		velocity = Vector2.ZERO
+		_interact_data = {}
+		_interactable = null
 
 
 func _handle_interact(data: Dictionary) -> void:
