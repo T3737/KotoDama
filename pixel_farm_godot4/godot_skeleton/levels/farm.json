@@ -25,7 +25,8 @@
       "interact": {
         "prompt": "Enter house  [E]",
         "action": "enter_house",
-        "target_level": "house_interior"
+        "target_level": "house_interior",
+        "destination_spawn_id": "house_interior_entrance"
       }
     },
     {

@@ -31,9 +31,8 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector2.ZERO
 		return
 
-	var direction := Vector2(
-		Input.get_axis("ui_left", "ui_right"),
-		Input.get_axis("ui_up", "ui_down"),
+	var direction := Input.get_vector(
+		"demo_move_left", "demo_move_right", "demo_move_up", "demo_move_down"
 	)
 	var sprinting := Input.is_action_pressed("sprint") and _stamina > 0.0
 	var speed := SPRINT_SPEED if sprinting else SPEED
@@ -83,11 +82,14 @@ func clear_interactable(interactable: Interactable) -> void:
 
 
 func set_movement_enabled(enabled: bool) -> void:
+	if _movement_enabled == enabled:
+		return
 	_movement_enabled = enabled
 	if not enabled:
 		velocity = Vector2.ZERO
 		_interact_data = {}
 		_interactable = null
+	print("Player movement %s" % ("enabled" if enabled else "disabled"))
 
 
 func _handle_interact(data: Dictionary) -> void:
@@ -99,7 +101,10 @@ func _handle_interact(data: Dictionary) -> void:
 		"enter_house":
 			var loader := get_tree().get_first_node_in_group("level_loader")
 			if loader:
-				loader.load_level("res://levels/" + data["target_level"] + ".json")
+				loader.request_level_transition(
+					str(data["target_level"]),
+					str(data.get("destination_spawn_id", ""))
+				)
 
 
 func _dir_name(direction: Vector2) -> String:

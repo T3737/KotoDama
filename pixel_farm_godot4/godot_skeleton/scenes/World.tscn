@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3 uid="uid://world"]
+[gd_scene load_steps=16 format=3 uid="uid://world"]
 
 [ext_resource type="PackedScene" uid="uid://player" path="res://scenes/Player.tscn" id="1"]
 [ext_resource type="Script" uid="uid://bfqpkkfwv87tr" path="res://scripts/World.gd" id="2"]
@@ -10,6 +10,8 @@
 [ext_resource type="Script" path="res://scripts/AIDialogueUI.gd" id="8"]
 [ext_resource type="Script" path="res://scripts/AIBackendClient.gd" id="9"]
 [ext_resource type="Script" path="res://scripts/AIVoiceRecorder.gd" id="10"]
+[ext_resource type="Script" path="res://scripts/AIVoiceSessionClient.gd" id="11"]
+[ext_resource type="Script" path="res://scripts/AIVoiceCapture.gd" id="12"]
 
 [sub_resource type="TileSet" id="TileSet_1"]
 tile_size = Vector2i(64, 64)
@@ -158,8 +160,19 @@ disabled = true
 [node name="AIBackendClient" type="Node" parent="."]
 script = ExtResource("9")
 
+[node name="AIVoiceSessionClient" type="Node" parent="."]
+script = ExtResource("11")
+
 [node name="AIVoiceRecorder" type="Node" parent="."]
 script = ExtResource("10")
+
+[node name="AIVoiceCapture" type="Node" parent="."]
+script = ExtResource("12")
+session_client_path = NodePath("../AIVoiceSessionClient")
+
+[node name="Microphone" type="AudioStreamPlayer" parent="AIVoiceCapture"]
+stream = SubResource("AudioStreamMicrophone_voice")
+bus = &"VoiceCapture"
 
 [node name="AudioStreamRecord" type="AudioStreamPlayer" parent="AIVoiceRecorder"]
 stream = SubResource("AudioStreamMicrophone_voice")

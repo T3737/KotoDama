@@ -1,15 +1,24 @@
 extends Node2D
 
+@export_enum("confirm_transcript", "auto_send_transcript") var transcript_mode := "confirm_transcript"
+
+const NO_AUDIO_WARNING := "No microphone audio detected. Check the selected system input device."
+const DEFAULT_LEVEL := "farm"
+
 @onready var level_loader: Node = $LevelLoader
 @onready var player = $Player
 @onready var dialogue_ui: AIDialogueUI = $DialogueUI
 @onready var backend_client: AIBackendClient = $AIBackendClient
+@onready var voice_session_client: AIVoiceSessionClient = $AIVoiceSessionClient
 @onready var voice_recorder: AIVoiceRecorder = $AIVoiceRecorder
+@onready var voice_capture: AIVoiceCapture = $AIVoiceCapture
 
 var _active_npc: Node
 var _request_npc_id := ""
 var _pending_player_text := ""
 var _transitioning := false
+var _use_http_fallback := false
+var _using_stream_capture := false
 
 func _ready() -> void:
 	dialogue_ui.message_submitted.connect(_on_message_submitted)
@@ -20,16 +29,34 @@ func _ready() -> void:
 	backend_client.request_failed.connect(_on_request_failed)
 	backend_client.transcription_received.connect(_on_transcription_received)
 	backend_client.transcription_failed.connect(_on_transcription_failed)
+	voice_session_client.connected.connect(_on_voice_connected)
+	voice_session_client.session_ready.connect(_on_voice_session_ready)
+	voice_session_client.state_changed.connect(_on_voice_state_changed)
+	voice_session_client.npc_text_final.connect(_on_voice_npc_text_final)
+	voice_session_client.audio_ready.connect(_on_voice_audio_ready)
+	voice_session_client.audio_received.connect(_on_voice_audio_received)
+	voice_session_client.transcript_final.connect(_on_voice_transcript_final)
+	voice_session_client.session_error.connect(_on_voice_session_error)
+	voice_capture.capture_warning.connect(_on_voice_capture_warning)
 	level_loader.exit_triggered.connect(_on_exit_triggered)
 	level_loader.level_loaded.connect(_on_level_loaded)
 	GameState.load_game()
-	level_loader.load_level("res://levels/farm.json")
+	var startup_level := GameState.current_level_id
+	var startup_path := "res://levels/%s.json" % startup_level
+	if not FileAccess.file_exists(startup_path):
+		push_warning("World: saved level '%s' is unavailable; using %s" % [startup_level, DEFAULT_LEVEL])
+		startup_level = DEFAULT_LEVEL
+		startup_path = "res://levels/%s.json" % startup_level
+	print("World ready; loading %s" % startup_level)
+	level_loader.load_level(startup_path, GameState.destination_spawn_id)
 
-func _on_level_loaded(_level_id: String) -> void:
+func _on_level_loaded(level_id: String) -> void:
+	GameState.current_level_id = level_id
 	_connect_npc_signals()
 	_transitioning = false
 	player.set_movement_enabled(true)
 	GameState.save_game()
+	print("World: active level %s" % level_id)
 
 func _connect_npc_signals() -> void:
 	for npc in get_tree().get_nodes_in_group("ai_npc"):
@@ -40,6 +67,7 @@ func _on_exit_triggered(target_level: String, destination_spawn_id: String) -> v
 	if _transitioning or dialogue_ui.is_open():
 		return
 	_transitioning = true
+	print("World: transition requested to %s at %s" % [target_level, destination_spawn_id])
 	player.set_movement_enabled(false)
 	GameState.current_level_id = target_level
 	GameState.set_destination_spawn(destination_spawn_id)
@@ -56,6 +84,20 @@ func _on_dialogue_requested(npc: Node) -> void:
 		npc_state.get("conversation_history", []),
 		str(npc.profile.get("greeting", "Hello."))
 	)
+	_use_http_fallback = false
+	voice_session_client.start_session(
+		"default_save:%s" % npc.npc_id,
+		npc.npc_id,
+		{
+			"level_id": GameState.current_level_id,
+			"player_state": GameState.player_state,
+			"npc_state": npc_state,
+			"visible_world_facts": GameState.get_visible_world_facts(npc.npc_id),
+			"scene_context": "The player is speaking with %s in %s." % [npc.npc_id, GameState.current_level_id],
+		}
+	)
+	dialogue_ui.set_session_status("Connecting...")
+	print("NPC interaction opened: %s" % npc.npc_id)
 
 func _on_message_submitted(player_text: String) -> void:
 	if _active_npc == null or backend_client.is_busy():
@@ -81,6 +123,14 @@ func _on_message_submitted(player_text: String) -> void:
 		"target_language": str(profile.get("teaching", {}).get("target_language", "Japanese")),
 		"scene_context": "The player is speaking with %s in %s." % [npc_id, GameState.current_level_id],
 	}
+	if voice_session_client.is_session_ready() and not _use_http_fallback:
+		if voice_session_client.send_player_text(player_text):
+			return
+	_use_http_fallback = true
+	dialogue_ui.set_session_status("Thinking... (HTTP fallback)")
+	if backend_client.is_busy():
+		return
+	print("World: HTTP dialogue fallback used for %s" % npc_id)
 	backend_client.send_message(payload)
 
 func _on_response_received(response: Dictionary) -> void:
@@ -94,11 +144,13 @@ func _on_response_received(response: Dictionary) -> void:
 	if dialogue_ui.is_open() and _active_npc != null and _active_npc.npc_id == _request_npc_id:
 		dialogue_ui.append_npc_text(dialogue)
 		dialogue_ui.player_input.grab_focus()
+	print("NPC response received (%d characters)" % dialogue.length())
 	GameState.save_game()
 	_request_npc_id = ""
 	_pending_player_text = ""
 
 func _on_request_failed(message: String) -> void:
+	print("Backend unavailable: %s" % message)
 	if dialogue_ui.is_open():
 		dialogue_ui.show_error(message)
 	else:
@@ -107,21 +159,40 @@ func _on_request_failed(message: String) -> void:
 	_pending_player_text = ""
 
 func _on_dialogue_closed() -> void:
+	voice_capture.cancel_capture()
+	voice_session_client.close_session()
 	voice_recorder.cancel_recording()
 	backend_client.cancel_transcription()
 	voice_recorder.remove_temporary_wav()
 	player.set_movement_enabled(true)
 	_active_npc = null
+	_using_stream_capture = false
+	print("Dialogue closed")
 
 func _on_record_requested() -> void:
 	if not dialogue_ui.is_open() or backend_client.is_busy():
 		return
+	if voice_session_client.is_session_ready():
+		_using_stream_capture = voice_capture.start_capture(transcript_mode == "auto_send_transcript")
+		if _using_stream_capture:
+			dialogue_ui.set_recording()
+			return
+		dialogue_ui.show_voice_error(voice_capture.get_last_error())
+		return
 	if voice_recorder.start_recording():
+		_using_stream_capture = false
 		dialogue_ui.set_recording()
 	else:
 		dialogue_ui.show_voice_error(voice_recorder.get_last_error())
 
 func _on_transcribe_requested() -> void:
+	if _using_stream_capture:
+		var bytes_sent := voice_capture.stop_capture()
+		_using_stream_capture = false
+		dialogue_ui.set_transcribing(bytes_sent)
+		if bytes_sent == 0:
+			dialogue_ui.show_voice_error(NO_AUDIO_WARNING)
+		return
 	if backend_client.is_transcribing():
 		return
 	var wav_path := voice_recorder.stop_recording()
@@ -139,9 +210,120 @@ func _on_transcription_received(transcript: String) -> void:
 	voice_recorder.remove_temporary_wav()
 	if dialogue_ui.is_open():
 		dialogue_ui.set_transcript(transcript)
+	print("Transcript received (%d characters)" % transcript.length())
 
 func _on_transcription_failed(message: String) -> void:
 	voice_recorder.remove_temporary_wav()
+	if dialogue_ui.is_open():
+		dialogue_ui.show_voice_error(message)
+	print("Backend unavailable: transcription failed: %s" % message)
+
+func _on_voice_connected() -> void:
+	print("WebSocket connected")
+
+func _on_voice_session_ready() -> void:
+	if dialogue_ui.is_open():
+		dialogue_ui.set_session_status("Ready")
+	print("NPC session started")
+
+func _on_voice_state_changed(state: String) -> void:
+	if not dialogue_ui.is_open():
+		return
+	match state:
+		"LISTENING":
+			dialogue_ui.set_recording()
+		"TRANSCRIBING":
+			dialogue_ui.set_transcribing(voice_capture.get_bytes_transmitted())
+		"GENERATING":
+			dialogue_ui.set_thinking(true)
+		"READY":
+			if _pending_player_text.is_empty():
+				dialogue_ui.set_thinking(false)
+		"ERROR":
+			dialogue_ui.set_session_status("Session error", true)
+
+func _on_voice_npc_text_final(payload: Dictionary) -> void:
+	var response := payload.duplicate(true)
+	response["dialogue"] = str(payload.get("text", ""))
+	response["npc_text"] = response["dialogue"]
+	_on_response_received(response)
+
+func _on_voice_audio_ready(payload: Dictionary) -> void:
+	if dialogue_ui.is_open():
+		dialogue_ui.set_session_status(
+			"Listening (%d Hz mono PCM16)" % int(payload.get("sample_rate", 0))
+		)
+
+func _on_voice_audio_received(payload: Dictionary) -> void:
+	if dialogue_ui.is_open():
+		dialogue_ui.set_transcribing(int(payload.get("received_bytes", 0)))
+	print("Backend received streamed audio: %d bytes" % int(payload.get("received_bytes", 0)))
+
+func _on_voice_transcript_final(payload: Dictionary) -> void:
+	var transcript := str(payload.get("text", "")).strip_edges()
+	if transcript.is_empty() or not dialogue_ui.is_open():
+		return
+	dialogue_ui.set_transcript(transcript)
+	print("Transcript received (%d characters)" % transcript.length())
+	if bool(payload.get("auto_sent", false)) and _active_npc != null:
+		_request_npc_id = _active_npc.npc_id
+		_pending_player_text = transcript
+		dialogue_ui.player_input.clear()
+		dialogue_ui.append_player_text(transcript)
+		dialogue_ui.set_thinking(true)
+	_using_stream_capture = false
+
+func _on_voice_session_error(code: String, message: String, fatal: bool) -> void:
+	if code in ["connection_failed", "connection_timeout", "connection_closed", "send_failed"]:
+		_use_http_fallback = true
+		if dialogue_ui.is_open():
+			dialogue_ui.set_session_status("Ready (HTTP fallback)")
+		if not _pending_player_text.is_empty() and not backend_client.is_busy():
+			_send_pending_over_http()
+		print("WebSocket unavailable; HTTP fallback enabled: %s" % code)
+		return
+	if code in ["audio_too_short", "audio_idle_timeout"] and voice_capture.get_bytes_transmitted() == 0:
+		if dialogue_ui.is_open():
+			dialogue_ui.show_voice_error(NO_AUDIO_WARNING)
+		_using_stream_capture = false
+		return
+	if code.begins_with("audio_") or code in ["stt_unavailable", "transcription_failed"]:
+		voice_capture.cancel_capture()
+		_using_stream_capture = false
+		if dialogue_ui.is_open():
+			dialogue_ui.show_voice_error(message)
+		return
+	if dialogue_ui.is_open():
+		dialogue_ui.show_error(message)
+	_request_npc_id = ""
+	_pending_player_text = ""
+	if fatal:
+		_use_http_fallback = true
+
+func _send_pending_over_http() -> void:
+	if _active_npc == null or _pending_player_text.is_empty() or backend_client.is_busy():
+		return
+	var npc_id: String = _active_npc.npc_id
+	var profile: Dictionary = _active_npc.profile
+	print("World: HTTP dialogue fallback used for %s" % npc_id)
+	backend_client.send_message({
+		"npc_id": npc_id,
+		"session_id": "default_save:%s" % npc_id,
+		"player_message": _pending_player_text,
+		"player_text": _pending_player_text,
+		"level_id": GameState.current_level_id,
+		"player_state": GameState.player_state,
+		"npc_state": GameState.get_npc_state(npc_id),
+		"visible_world_facts": GameState.get_visible_world_facts(npc_id),
+		"npc_name": str(profile.get("display_name", npc_id)),
+		"target_language": str(profile.get("teaching", {}).get("target_language", "Japanese")),
+		"scene_context": "The player is speaking with %s in %s." % [npc_id, GameState.current_level_id],
+	})
+
+func _on_voice_capture_warning(message: String) -> void:
+	if voice_capture.is_capturing():
+		voice_capture.stop_capture("no_audio_detected")
+	_using_stream_capture = false
 	if dialogue_ui.is_open():
 		dialogue_ui.show_voice_error(message)
 

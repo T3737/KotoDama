@@ -41,12 +41,20 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("interact") and not _pending_exit.is_empty():
-		exit_triggered.emit(
+		request_level_transition(
 			_pending_exit.get("target_level", ""),
 			_pending_exit.get("destination_spawn_id", "")
 		)
 
+func request_level_transition(target_level: String, destination_spawn_id: String = "") -> void:
+	if target_level.is_empty():
+		push_warning("LevelLoader: ignored transition with no target level")
+		return
+	print("LevelLoader: requested transition to %s at spawn %s" % [target_level, destination_spawn_id])
+	exit_triggered.emit(target_level, destination_spawn_id)
+
 func load_level(path: String, spawn_id: String = "") -> void:
+	print("LevelLoader: loading %s" % path)
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		push_error("LevelLoader: cannot open " + path)
@@ -72,12 +80,14 @@ func load_level(path: String, spawn_id: String = "") -> void:
 	_play_music(data)
 
 	level_loaded.emit(_current_level_id)
+	print("LevelLoader: active level %s" % _current_level_id)
 
 # ── private ────────────────────────────────────────────────
 
 func _clear() -> void:
 	_tilemap.clear()
 	for child in _props.get_children():
+		_props.remove_child(child)
 		child.queue_free()
 	_pending_exit = {}
 
@@ -270,6 +280,7 @@ func _set_spawn(data: Dictionary, spawn_id: String = "") -> void:
 			chosen = s
 			break
 	_player.global_position = Vector2(chosen["x"], chosen["y"])
+	print("LevelLoader: selected spawn %s at %s" % [chosen.get("id", "<first>"), _player.global_position])
 
 func _play_music(data: Dictionary) -> void:
 	if _music == null:

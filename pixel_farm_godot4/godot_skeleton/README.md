@@ -1,13 +1,16 @@
-# KotoDama Two-Level Godot Demo
+# KotoDama Unified Sandbox
 
-Godot 4.6 placeholder prototype with one persistent player, three data-driven
-LLM NPCs, two levels, reusable doors, and JSON save data.
+Godot 4.6 sandbox with one persistent player, shared local-AI dialogue systems,
+data-driven levels, and JSON save data.
 
 ## Run
 
 1. Start Ollama and the FastAPI backend as described in `backend/README.md`.
 2. Open `pixel_farm_godot4/godot_skeleton/project.godot` in Godot 4.6.
-3. Press F5, or open `scenes/AIDialogueDemo.tscn` and press F6.
+3. Press F5. The canonical main scene is `scenes/World.tscn`.
+
+The former `AIDialogueDemo` and temporary demo player are archived under
+`_archive/superseded_demo` for reference only; normal gameplay does not use them.
 
 Controls:
 
@@ -30,8 +33,8 @@ ws://127.0.0.1:8000/voice/session
 ```
 
 The backend returns `transcript.final`. `confirm_transcript` is the default and
-copies the visible transcript into the text field. The `AIDialogueDemo` node
-can instead select `auto_send_transcript` to route it directly to the NPC.
+copies the visible transcript into the text field. The `World` node can instead
+select `auto_send_transcript` to route it directly to the NPC.
 
 The older `AIVoiceRecorder` remains as a connection fallback. It uses the
 muted `Record` bus and `AudioEffectRecord`, writes a temporary 16-bit WAV, and
@@ -70,7 +73,7 @@ Godot level
 NPC interaction
     |
     v
-AIDialogueDemo persistent controller
+World persistent controller
     |
     +--> AIVoiceCapture --> AIVoiceSessionClient --> /voice/session (PCM + text)
     |
@@ -96,23 +99,22 @@ behavior. Typed Send uses `player.text`; `transcript.final` and
 and sends `session.close`. If the socket fails, `/npc/chat` and recorded-WAV
 transcription remain non-destructive fallbacks.
 
-`AIDialogueDemo.tscn` keeps the player, dialogue UI, HTTP client, and
-`LevelContainer` alive. Only the child level scene is replaced during a door
-transition. `GameState` is an autoload, so its plain dictionaries survive level
-changes.
+`World.tscn` keeps the canonical player, camera, dialogue UI, HTTP client,
+WebSocket client, and microphone components alive. `LevelLoader.gd` replaces
+only the JSON-driven terrain and props during a door transition. `GameState` is
+an autoload, so its plain dictionaries survive level changes.
 
 ## Levels And Doors
 
-- `scenes/levels/level_01.tscn`: Aiko and the Level 2 door.
-- `scenes/levels/level_02.tscn`: Haru, Emi, and the Level 1 return door.
-- `scenes/objects/SceneDoor.tscn`: reusable interaction-based door.
-- `scripts/SceneDoor.gd`: exports `destination_scene`,
-  `destination_spawn_id`, and `interaction_required`.
+- `levels/farm.json`: original farm and the entrance to the AI clearing.
+- `levels/level_01.json`: Aiko's clearing, farm return, and market entrance.
+- `levels/level_02.json`: Haru, Emi, and the return to Aiko's clearing.
+- `levels/house_interior.json`: farmhouse interior and farm return.
+- `scripts/LevelLoader.gd`: the canonical JSON level, exit, and spawn loader.
 
-To add a spawn, add a `Marker2D` with `SpawnPoint.gd`, assign a unique
-`spawn_id`, then set the destination door's `destination_spawn_id` to that
-value. Spawn markers should be placed outside the destination door's
-interaction shape to avoid transition loops.
+To add a spawn, add an entry to a level's `spawns` array and reference its ID
+from an exit's `destination_spawn_id`. Keep spawns outside exit interaction
+shapes to avoid immediate transition loops.
 
 ## NPC Profiles
 
@@ -159,10 +161,10 @@ malformed saves fall back to defaults.
 
 ## Manual Test
 
-1. Start in Level 1 and move with WASD or arrows.
-2. Talk to Aiko and submit a memorable statement.
-3. Close dialogue and use the Level 2 door with E.
-4. Confirm the player appears at the Level 2 entrance.
+1. Start on the farm and move with WASD or arrows.
+2. Use the east door to enter Aiko's clearing and confirm the matching spawn.
+3. Talk to Aiko and submit a memorable statement.
+4. Close dialogue and use the market door with E.
 5. Talk to Haru about buying quantities.
 6. Talk to Emi about directions.
 7. Use the return door.
