@@ -1,8 +1,8 @@
 extends Node2D
 
-@export_enum("confirm_transcript", "auto_send_transcript") var transcript_mode := "confirm_transcript"
+@export_enum("websocket_stream", "wav_http") var voice_transport := "websocket_stream"
 
-const NO_AUDIO_WARNING := "No microphone audio detected. Check the selected system input device."
+const NO_AUDIO_WARNING := "No microphone audio detected. Check the selected Windows input device."
 const DEFAULT_LEVEL := "farm"
 
 @onready var level_loader: Node = $LevelLoader
@@ -35,8 +35,12 @@ func _ready() -> void:
 	voice_session_client.npc_text_final.connect(_on_voice_npc_text_final)
 	voice_session_client.audio_ready.connect(_on_voice_audio_ready)
 	voice_session_client.audio_received.connect(_on_voice_audio_received)
+	voice_session_client.audio_auto_stopped.connect(_on_voice_audio_auto_stopped)
+	voice_session_client.vad_speech_started.connect(_on_vad_speech_started)
+	voice_session_client.vad_speech_ended.connect(_on_vad_speech_ended)
 	voice_session_client.transcript_final.connect(_on_voice_transcript_final)
 	voice_session_client.session_error.connect(_on_voice_session_error)
+	voice_session_client.disconnected.connect(_on_voice_disconnected)
 	voice_capture.capture_warning.connect(_on_voice_capture_warning)
 	level_loader.exit_triggered.connect(_on_exit_triggered)
 	level_loader.level_loaded.connect(_on_level_loaded)
@@ -172,8 +176,9 @@ func _on_dialogue_closed() -> void:
 func _on_record_requested() -> void:
 	if not dialogue_ui.is_open() or backend_client.is_busy():
 		return
-	if voice_session_client.is_session_ready():
-		_using_stream_capture = voice_capture.start_capture(transcript_mode == "auto_send_transcript")
+	if voice_transport == "websocket_stream" and voice_session_client.is_session_ready():
+		# The permanent flow always lets the player confirm or edit the transcript.
+		_using_stream_capture = voice_capture.start_capture()
 		if _using_stream_capture:
 			dialogue_ui.set_recording()
 			return
@@ -189,9 +194,10 @@ func _on_transcribe_requested() -> void:
 	if _using_stream_capture:
 		var bytes_sent := voice_capture.stop_capture()
 		_using_stream_capture = false
-		dialogue_ui.set_transcribing(bytes_sent)
 		if bytes_sent == 0:
 			dialogue_ui.show_voice_error(NO_AUDIO_WARNING)
+		else:
+			dialogue_ui.set_sending_audio(bytes_sent)
 		return
 	if backend_client.is_transcribing():
 		return
@@ -233,7 +239,7 @@ func _on_voice_state_changed(state: String) -> void:
 		"LISTENING":
 			dialogue_ui.set_recording()
 		"TRANSCRIBING":
-			dialogue_ui.set_transcribing(voice_capture.get_bytes_transmitted())
+			dialogue_ui.set_stream_transcribing(voice_capture.get_bytes_transmitted())
 		"GENERATING":
 			dialogue_ui.set_thinking(true)
 		"READY":
@@ -250,14 +256,36 @@ func _on_voice_npc_text_final(payload: Dictionary) -> void:
 
 func _on_voice_audio_ready(payload: Dictionary) -> void:
 	if dialogue_ui.is_open():
-		dialogue_ui.set_session_status(
-			"Listening (%d Hz mono PCM16)" % int(payload.get("sample_rate", 0))
-		)
+		if not bool(payload.get("vad_enabled", false)):
+			dialogue_ui.set_vad_unavailable()
+		else:
+			dialogue_ui.set_session_status(
+				"Listening (%d Hz mono PCM16)" % int(payload.get("sample_rate", 0))
+			)
 
 func _on_voice_audio_received(payload: Dictionary) -> void:
 	if dialogue_ui.is_open():
-		dialogue_ui.set_transcribing(int(payload.get("received_bytes", 0)))
+		dialogue_ui.set_stream_transcribing(int(payload.get("received_bytes", 0)))
 	print("Backend received streamed audio: %d bytes" % int(payload.get("received_bytes", 0)))
+
+func _on_vad_speech_started(_payload: Dictionary) -> void:
+	if dialogue_ui.is_open():
+		dialogue_ui.set_speech_detected()
+
+func _on_vad_speech_ended(_payload: Dictionary) -> void:
+	if dialogue_ui.is_open():
+		dialogue_ui.set_waiting_for_speech_end()
+
+func _on_voice_audio_auto_stopped(payload: Dictionary) -> void:
+	var bytes_sent := voice_capture.stop_capture_from_server()
+	_using_stream_capture = false
+	if not dialogue_ui.is_open():
+		return
+	var reason := str(payload.get("reason", "end_of_speech"))
+	if reason == "maximum_turn_duration":
+		dialogue_ui.set_maximum_length_reached()
+	else:
+		dialogue_ui.set_sending_audio(bytes_sent)
 
 func _on_voice_transcript_final(payload: Dictionary) -> void:
 	var transcript := str(payload.get("text", "")).strip_edges()
@@ -274,6 +302,20 @@ func _on_voice_transcript_final(payload: Dictionary) -> void:
 	_using_stream_capture = false
 
 func _on_voice_session_error(code: String, message: String, fatal: bool) -> void:
+	if code == "vad_unavailable":
+		if dialogue_ui.is_open() and voice_capture.is_capturing():
+			dialogue_ui.set_vad_unavailable()
+		return
+	if code == "no_speech_timeout":
+		_using_stream_capture = false
+		if dialogue_ui.is_open():
+			dialogue_ui.show_voice_error("Voice: No speech detected")
+		return
+	if code == "maximum_turn_duration":
+		_using_stream_capture = false
+		if dialogue_ui.is_open():
+			dialogue_ui.show_voice_error("Voice: Maximum recording length reached")
+		return
 	if code in ["connection_failed", "connection_timeout", "connection_closed", "send_failed"]:
 		_use_http_fallback = true
 		if dialogue_ui.is_open():
@@ -287,7 +329,13 @@ func _on_voice_session_error(code: String, message: String, fatal: bool) -> void
 			dialogue_ui.show_voice_error(NO_AUDIO_WARNING)
 		_using_stream_capture = false
 		return
-	if code.begins_with("audio_") or code in ["stt_unavailable", "transcription_failed"]:
+	if code.begins_with("audio_") or code in [
+		"no_audio",
+		"no_speech_detected",
+		"malformed_audio",
+		"stt_unavailable",
+		"transcription_failed",
+	]:
 		voice_capture.cancel_capture()
 		_using_stream_capture = false
 		if dialogue_ui.is_open():
@@ -326,6 +374,13 @@ func _on_voice_capture_warning(message: String) -> void:
 	_using_stream_capture = false
 	if dialogue_ui.is_open():
 		dialogue_ui.show_voice_error(message)
+
+func _on_voice_disconnected() -> void:
+	if voice_capture.is_capturing():
+		voice_capture.cancel_capture()
+		_using_stream_capture = false
+		if dialogue_ui.is_open():
+			dialogue_ui.show_voice_error("Voice connection closed; recording stopped.")
 
 func _apply_controlled_updates(npc_id: String, response: Dictionary) -> void:
 	for fact in response.get("memory_updates", []):

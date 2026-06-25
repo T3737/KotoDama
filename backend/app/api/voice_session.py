@@ -125,6 +125,7 @@ async def voice_session(websocket: WebSocket) -> None:
                     websocket.app.state.ollama_client,
                     send,
                     websocket.app.state.stt_service_factory,
+                    websocket.app.state.vad_service_factory,
                 )
                 try:
                     await session.open(event)

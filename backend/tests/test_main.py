@@ -1,8 +1,10 @@
 import asyncio
 import importlib
+import io
 import os
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,6 +16,7 @@ from app import main
 from app.speech.stt_service import (
     FasterWhisperSTTService,
     STTUnavailableError,
+    clear_stt_service_cache,
 )
 
 
@@ -140,14 +143,14 @@ class SpeechTranscriptionTests(unittest.TestCase):
             files={"file": ("voice.wav", b"not-real-audio", "audio/wav")},
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.json(),
-            {
-                "transcript": "i would like to learn japanese",
-                "language": "en",
-                "status": "ok",
-            },
-        )
+        body = response.json()
+        self.assertEqual(body["transcript"], "i would like to learn japanese")
+        self.assertEqual(body["language"], "en")
+        self.assertEqual(body["status"], "ok")
+        self.assertEqual(body["metadata"]["model"], "mock")
+        self.assertEqual(body["metadata"]["mode"], "mock")
+        self.assertTrue(body["metadata"]["speech_detected"])
+        self.assertIsInstance(body["metadata"]["transcription_ms"], int)
 
     def test_empty_audio_is_rejected(self) -> None:
         response = self.client.post(
@@ -155,7 +158,50 @@ class SpeechTranscriptionTests(unittest.TestCase):
             files={"file": ("voice.ogg", b"", "audio/ogg")},
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn("empty", response.json()["detail"].lower())
+        self.assertEqual(response.json()["detail"]["code"], "no_audio")
+        self.assertIn("empty", response.json()["detail"]["message"].lower())
+
+    def test_silent_local_wav_has_structured_no_speech_error(self) -> None:
+        wav_bytes = io.BytesIO()
+        with wave.open(wav_bytes, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(16000)
+            wav_file.writeframes(b"\x00\x00" * 1600)
+        old_mode = os.environ.get("STT_MODE")
+        os.environ["STT_MODE"] = "local"
+        clear_stt_service_cache()
+        try:
+            response = self.client.post(
+                "/speech/transcribe",
+                files={"file": ("silence.wav", wav_bytes.getvalue(), "audio/wav")},
+            )
+        finally:
+            if old_mode is None:
+                os.environ.pop("STT_MODE", None)
+            else:
+                os.environ["STT_MODE"] = old_mode
+            clear_stt_service_cache()
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["detail"]["code"], "no_speech_detected")
+
+    def test_malformed_local_wav_has_structured_error(self) -> None:
+        old_mode = os.environ.get("STT_MODE")
+        os.environ["STT_MODE"] = "local"
+        clear_stt_service_cache()
+        try:
+            response = self.client.post(
+                "/speech/transcribe",
+                files={"file": ("broken.wav", b"not a wav", "audio/wav")},
+            )
+        finally:
+            if old_mode is None:
+                os.environ.pop("STT_MODE", None)
+            else:
+                os.environ["STT_MODE"] = old_mode
+            clear_stt_service_cache()
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"]["code"], "malformed_audio")
 
     def test_unsupported_audio_extension_is_rejected(self) -> None:
         response = self.client.post(

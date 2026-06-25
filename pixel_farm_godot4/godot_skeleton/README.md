@@ -32,9 +32,12 @@ packets over:
 ws://127.0.0.1:8000/voice/session
 ```
 
-The backend returns `transcript.final`. `confirm_transcript` is the default and
-copies the visible transcript into the text field. The `World` node can instead
-select `auto_send_transcript` to route it directly to the NPC.
+The backend returns `transcript.final`, displays it visibly, and copies it into
+the text field for confirmation or editing. It is never sent automatically.
+
+`World.voice_transport` selects `websocket_stream` (the default) or `wav_http`.
+If the preferred WebSocket session is unavailable, the existing WAV/HTTP path
+remains available without creating another dialogue UI or NPC client.
 
 The older `AIVoiceRecorder` remains as a connection fallback. It uses the
 muted `Record` bus and `AudioEffectRecord`, writes a temporary 16-bit WAV, and
@@ -63,6 +66,23 @@ microphone access for desktop applications/Godot if the saved file is empty.
 Godot logs the active input driver/device, capture bus/effect readiness,
 available frames, and transmitted bytes. If no frames arrive, the UI points to
 the selected system input device instead of showing a generic backend error.
+Backend `no_speech_detected`, `malformed_audio`, `stt_unavailable`, and
+`transcription_failed` codes are shown in the voice-status line rather than as
+generic dialogue failures. Successful metadata is optional; older/local
+backends that only return transcript text remain compatible.
+
+Manual streaming follows `READY -> LISTENING -> TRANSCRIBING -> READY`. Audio
+is mono signed PCM16 little-endian at the actual Godot mix rate. The backend
+limits each utterance to 20 seconds and a format-derived byte ceiling. Partial
+transcription, TTS, playback, and interruption remain deferred.
+
+When the separately configured local Silero ONNX VAD is ready, Record changes
+to `Listening...`, speech start/end events update the shared voice status, and
+the backend sends `audio.auto_stopped` after sustained silence. Godot then
+stops its microphone player without sending a duplicate `audio.stop` and waits
+for the editable transcript. Manual Stop remains available. If VAD is disabled
+or unavailable, the UI says `Automatic stopping unavailable - use Stop` and
+the existing manual streaming flow continues unchanged.
 
 ## Architecture
 

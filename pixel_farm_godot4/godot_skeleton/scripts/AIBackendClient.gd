@@ -104,9 +104,7 @@ func _on_request_completed(
 	var parsed: Variant = json.data if parse_error == OK else null
 
 	if response_code < 200 or response_code >= 300:
-		var detail := response_text
-		if parsed is Dictionary and parsed.has("detail"):
-			detail = str(parsed["detail"])
+		var detail := _response_error_message(parsed, response_text)
 		print("AI backend error: HTTP ", response_code)
 		request_failed.emit("Backend error %d: %s" % [response_code, detail])
 		return
@@ -158,9 +156,7 @@ func _on_transcription_completed(
 	var parsed: Variant = json.data if parse_error == OK else null
 
 	if response_code < 200 or response_code >= 300:
-		var detail := response_text
-		if parsed is Dictionary and parsed.has("detail"):
-			detail = str(parsed["detail"])
+		var detail := _response_error_message(parsed, response_text)
 		print("Transcription failed with HTTP ", response_code, ": ", detail)
 		transcription_failed.emit("Speech endpoint error %d: %s" % [response_code, detail])
 		return
@@ -195,3 +191,11 @@ func _build_multipart_body(
 	body.append_array(audio_bytes)
 	body.append_array(("\r\n--%s--\r\n" % boundary).to_utf8_buffer())
 	return body
+
+func _response_error_message(parsed: Variant, fallback: String) -> String:
+	if not parsed is Dictionary or not parsed.has("detail"):
+		return fallback
+	var detail: Variant = parsed["detail"]
+	if detail is Dictionary:
+		return str(detail.get("message", detail.get("code", fallback)))
+	return str(detail)

@@ -8,8 +8,13 @@ signal npc_text_delta(text: String)
 signal npc_text_final(payload: Dictionary)
 signal audio_ready(payload: Dictionary)
 signal audio_received(payload: Dictionary)
+signal audio_bytes_sent(total_bytes: int)
+signal audio_auto_stopped(payload: Dictionary)
+signal vad_speech_started(payload: Dictionary)
+signal vad_speech_ended(payload: Dictionary)
 signal transcript_final(payload: Dictionary)
 signal session_error(code: String, message: String, fatal: bool)
+signal voice_error(code: String, message: String, fatal: bool)
 signal disconnected
 
 @export var endpoint := "ws://127.0.0.1:8000/voice/session"
@@ -27,6 +32,7 @@ var _last_ping_ms := 0
 var _last_state := WebSocketPeer.STATE_CLOSED
 var _conversation_state := "DISCONNECTED"
 var _audio_sending := false
+var _audio_bytes_sent := 0
 
 func _process(_delta: float) -> void:
 	if _socket == null:
@@ -53,7 +59,7 @@ func _process(_delta: float) -> void:
 	while _socket.get_available_packet_count() > 0:
 		var packet := _socket.get_packet()
 		if not _socket.was_string_packet():
-			session_error.emit("binary_not_supported", "Unexpected binary WebSocket event.", false)
+			_emit_error("binary_not_supported", "Unexpected binary WebSocket event.", false)
 			continue
 		_handle_packet(packet.get_string_from_utf8())
 
@@ -69,6 +75,7 @@ func start_session(session_id: String, npc_id: String, context: Dictionary = {})
 	_session_ready = false
 	_start_sent = false
 	_audio_sending = false
+	_audio_bytes_sent = 0
 	_conversation_state = "CONNECTING"
 	_intentional_close = false
 	_socket = WebSocketPeer.new()
@@ -84,7 +91,7 @@ func send_player_text(text: String) -> bool:
 		return false
 	return _send_event("player.text", {"text": clean_text})
 
-func start_audio(sample_rate: int, auto_send_transcript: bool = false) -> bool:
+func start_audio(sample_rate: int) -> bool:
 	if not _session_ready or _conversation_state != "READY" or _audio_sending:
 		return false
 	_audio_sending = _send_event(
@@ -93,9 +100,10 @@ func start_audio(sample_rate: int, auto_send_transcript: bool = false) -> bool:
 			"sample_rate": sample_rate,
 			"channels": 1,
 			"encoding": "pcm_s16le",
-			"auto_send_transcript": auto_send_transcript,
 		}
 	)
+	if _audio_sending:
+		_audio_bytes_sent = 0
 	return _audio_sending
 
 func send_audio_frame(audio_bytes: PackedByteArray) -> bool:
@@ -107,8 +115,10 @@ func send_audio_frame(audio_bytes: PackedByteArray) -> bool:
 	var error := _socket.send(audio_bytes, WebSocketPeer.WRITE_MODE_BINARY)
 	if error != OK:
 		_audio_sending = false
-		session_error.emit("send_failed", "Could not send microphone audio (error %d)." % error, false)
+		_emit_error("send_failed", "Could not send microphone audio (error %d)." % error, false)
 		return false
+	_audio_bytes_sent += audio_bytes.size()
+	audio_bytes_sent.emit(_audio_bytes_sent)
 	return true
 
 func stop_audio(reason: String = "player_released") -> bool:
@@ -132,6 +142,7 @@ func close_session() -> void:
 	_session_ready = false
 	_start_sent = false
 	_audio_sending = false
+	_audio_bytes_sent = 0
 	_conversation_state = "DISCONNECTED"
 	disconnected.emit()
 
@@ -152,21 +163,21 @@ func _send_event(event_type: String, payload: Dictionary) -> bool:
 	}
 	var error := _socket.send_text(JSON.stringify(envelope))
 	if error != OK:
-		session_error.emit("send_failed", "Could not send WebSocket event (error %d)." % error, false)
+		_emit_error("send_failed", "Could not send WebSocket event (error %d)." % error, false)
 		return false
 	return true
 
 func _handle_packet(text: String) -> void:
 	var json := JSON.new()
 	if json.parse(text) != OK or not json.data is Dictionary:
-		session_error.emit("malformed_server_event", "Backend sent malformed JSON.", false)
+		_emit_error("malformed_server_event", "Backend sent malformed JSON.", false)
 		return
 	var event: Dictionary = json.data
 	if not event.has("type") or not event.has("payload") or not event["payload"] is Dictionary:
-		session_error.emit("invalid_server_event", "Backend sent an invalid event envelope.", false)
+		_emit_error("invalid_server_event", "Backend sent an invalid event envelope.", false)
 		return
 	if str(event.get("session_id", "")) != _session_id:
-		session_error.emit("session_mismatch", "Backend event belongs to another session.", false)
+		_emit_error("session_mismatch", "Backend event belongs to another session.", false)
 		return
 	var event_type := str(event["type"])
 	var payload: Dictionary = event["payload"]
@@ -189,10 +200,17 @@ func _handle_packet(text: String) -> void:
 			audio_ready.emit(payload)
 		"audio.received":
 			audio_received.emit(payload)
+		"audio.auto_stopped":
+			_audio_sending = false
+			audio_auto_stopped.emit(payload)
+		"vad.speech_started":
+			vad_speech_started.emit(payload)
+		"vad.speech_ended":
+			vad_speech_ended.emit(payload)
 		"transcript.final":
 			transcript_final.emit(payload)
 		"error":
-			session_error.emit(
+			_emit_error(
 				str(payload.get("code", "unknown_error")),
 				str(payload.get("message", "Unknown session error.")),
 				bool(payload.get("fatal", false))
@@ -200,7 +218,7 @@ func _handle_packet(text: String) -> void:
 		"pong":
 			_last_ping_ms = Time.get_ticks_msec()
 		_:
-			session_error.emit("unsupported_server_event", "Unsupported backend event: %s" % event_type, false)
+			_emit_error("unsupported_server_event", "Unsupported backend event: %s" % event_type, false)
 
 func _handle_closed() -> void:
 	var was_intentional := _intentional_close
@@ -210,7 +228,7 @@ func _handle_closed() -> void:
 	_audio_sending = false
 	_conversation_state = "DISCONNECTED"
 	if not was_intentional:
-		session_error.emit("connection_closed", "WebSocket connection closed.", false)
+		_emit_error("connection_closed", "WebSocket connection closed.", false)
 	disconnected.emit()
 
 func _fail_connection(code: String, message: String) -> void:
@@ -220,8 +238,12 @@ func _fail_connection(code: String, message: String) -> void:
 	_session_ready = false
 	_audio_sending = false
 	_conversation_state = "DISCONNECTED"
-	session_error.emit(code, message, false)
+	_emit_error(code, message, false)
 	disconnected.emit()
+
+func _emit_error(code: String, message: String, fatal: bool) -> void:
+	session_error.emit(code, message, fatal)
+	voice_error.emit(code, message, fatal)
 
 func _new_event_id() -> String:
 	return "%d-%d" % [Time.get_unix_time_from_system(), Time.get_ticks_usec()]

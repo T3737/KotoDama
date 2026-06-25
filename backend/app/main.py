@@ -1,6 +1,9 @@
+import logging
+import os
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, model_validator
 
 from app.api.speech import router as speech_router
@@ -16,7 +19,11 @@ from app.orchestration.npc_orchestrator import (
     npc_session_key,
     validated_private_history,
 )
-from app.speech.stt_service import create_stt_service, get_stt_mode
+from app.speech.stt_service import create_stt_service, get_stt_mode, get_stt_readiness
+from app.speech.vad_service import VADUnavailableError, create_vad_service
+
+
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(title="KotoDama NPC AI Backend")
@@ -25,9 +32,36 @@ app.include_router(voice_session_router)
 session_store = SessionStore(max_messages=12)
 ollama_client = OllamaClient()
 npc_orchestrator = NpcOrchestrator(session_store)
+stt_service = create_stt_service()
+vad_service = create_vad_service()
 app.state.ollama_client = ollama_client
 app.state.npc_orchestrator = npc_orchestrator
-app.state.stt_service_factory = create_stt_service
+app.state.stt_service = stt_service
+app.state.stt_service_factory = lambda: app.state.stt_service
+app.state.vad_service = vad_service
+app.state.vad_service_factory = lambda: app.state.vad_service
+
+
+@app.on_event("startup")
+async def preload_stt_model() -> None:
+    if os.getenv("STT_PRELOAD", "false").strip().lower() not in {"1", "true", "yes"}:
+        return
+    try:
+        await run_in_threadpool(app.state.stt_service.prepare)
+    except Exception as exc:
+        # STT remains optional: readiness reports the error while health stays healthy.
+        logger.error("stt_preload_failed error=%s", exc)
+
+
+@app.on_event("startup")
+async def preload_vad_model() -> None:
+    if os.getenv("VAD_PRELOAD", "true").strip().lower() not in {"1", "true", "yes"}:
+        return
+    try:
+        await run_in_threadpool(app.state.vad_service.prepare)
+    except VADUnavailableError as exc:
+        # Automatic stopping is optional; manual Stop remains available.
+        logger.warning("vad_preload_unavailable error=%s", exc)
 
 
 class NpcChatRequest(BaseModel):
@@ -75,11 +109,13 @@ async def health() -> dict[str, str]:
 
 
 @app.get("/ready")
-async def ready() -> dict[str, str | bool]:
+async def ready() -> dict[str, Any]:
     return {
         "status": "ok",
         "ollama": await app.state.ollama_client.is_available(),
         "stt_mode": get_stt_mode(),
+        "stt": get_stt_readiness(),
+        "vad": app.state.vad_service.readiness(),
         "voice_websocket": True,
     }
 

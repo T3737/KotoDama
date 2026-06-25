@@ -1,0 +1,4 @@
+# Local ONNX VAD runtime. No model files are downloaded by these packages at runtime.
+onnxruntime
+numpy
+av

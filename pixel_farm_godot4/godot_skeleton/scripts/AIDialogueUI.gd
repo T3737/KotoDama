@@ -85,7 +85,7 @@ func is_request_active() -> bool:
 
 func set_recording() -> void:
 	_voice_state = "recording"
-	transcript_status.text = "Voice: Recording..."
+	transcript_status.text = "Voice: Listening..."
 	transcript_status.modulate = Color(1.0, 0.55, 0.45)
 	_refresh_controls()
 
@@ -96,6 +96,42 @@ func set_transcribing(file_size: int = 0) -> void:
 		if file_size > 0
 		else "Voice: Transcribing..."
 	)
+	transcript_status.modulate = Color(1.0, 0.85, 0.45)
+	_refresh_controls()
+
+func set_speech_detected() -> void:
+	_voice_state = "recording"
+	transcript_status.text = "Voice: Speech detected"
+	transcript_status.modulate = Color(0.65, 0.9, 0.7)
+	_refresh_controls()
+
+func set_waiting_for_speech_end() -> void:
+	_voice_state = "recording"
+	transcript_status.text = "Voice: Waiting for you to finish..."
+	transcript_status.modulate = Color(1.0, 0.85, 0.45)
+	_refresh_controls()
+
+func set_vad_unavailable() -> void:
+	_voice_state = "recording"
+	transcript_status.text = "Voice: Automatic stopping unavailable - use Stop"
+	transcript_status.modulate = Color(1.0, 0.65, 0.35)
+	_refresh_controls()
+
+func set_maximum_length_reached() -> void:
+	_voice_state = "transcribing"
+	transcript_status.text = "Voice: Maximum recording length reached"
+	transcript_status.modulate = Color(1.0, 0.65, 0.35)
+	_refresh_controls()
+
+func set_sending_audio(byte_count: int) -> void:
+	_voice_state = "transcribing"
+	transcript_status.text = "Voice: Sending audio... (%d bytes)" % byte_count
+	transcript_status.modulate = Color(1.0, 0.85, 0.45)
+	_refresh_controls()
+
+func set_stream_transcribing(byte_count: int) -> void:
+	_voice_state = "transcribing"
+	transcript_status.text = "Voice: Transcribing... (%d bytes streamed)" % byte_count
 	transcript_status.modulate = Color(1.0, 0.85, 0.45)
 	_refresh_controls()
 

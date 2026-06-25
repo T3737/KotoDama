@@ -4,3 +4,7 @@ backend/.venv/
 **/__pycache__/
 *.pyc
 **/.godot/
+backend/samples/
+backend/benchmarks/audio/
+backend/**/*_recording.wav
+backend/models/*.onnx

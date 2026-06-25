@@ -4,7 +4,7 @@ extends Node
 signal capture_warning(message: String)
 
 const CAPTURE_BUS_NAME := "VoiceCapture"
-const NO_AUDIO_WARNING := "No microphone audio detected. Check the selected system input device."
+const NO_AUDIO_WARNING := "No microphone audio detected. Check the selected Windows input device."
 
 @export var session_client_path: NodePath
 @export var no_frames_timeout_seconds := 1.5
@@ -42,7 +42,7 @@ func _process(_delta: float) -> void:
 		_last_error = NO_AUDIO_WARNING
 		capture_warning.emit(_last_error)
 
-func start_capture(auto_send_transcript: bool = false) -> bool:
+func start_capture() -> bool:
 	_last_error = ""
 	if _capturing:
 		_last_error = "Microphone capture is already active."
@@ -64,7 +64,7 @@ func start_capture(auto_send_transcript: bool = false) -> bool:
 		return false
 
 	var sample_rate := int(AudioServer.get_mix_rate())
-	if not _session_client.start_audio(sample_rate, auto_send_transcript):
+	if not _session_client.start_audio(sample_rate):
 		_last_error = "Could not start the streamed audio turn."
 		return false
 	_capture_effect.clear_buffer()
@@ -89,6 +89,17 @@ func stop_capture(reason: String = "player_released") -> int:
 	microphone_player.stop()
 	_session_client.stop_audio(reason)
 	print("Voice capture stopped: frames=%d bytes_transmitted=%d" % [_frames_captured, _bytes_transmitted])
+	return _bytes_transmitted
+
+func stop_capture_from_server() -> int:
+	if not _capturing:
+		return _bytes_transmitted
+	_capturing = false
+	microphone_player.stop()
+	print(
+		"Voice capture auto-stopped: frames=%d bytes_transmitted=%d"
+		% [_frames_captured, _bytes_transmitted]
+	)
 	return _bytes_transmitted
 
 func cancel_capture() -> void:
