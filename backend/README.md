@@ -112,9 +112,11 @@ silently labelled as 16 kHz.
 }
 ```
 
-`auto_send_transcript` is accepted for forward protocol compatibility but is
-currently ignored. Every transcript returns to the editable text field for
-player confirmation. `audio.stop` accepts an optional `reason`.
+`auto_send_transcript` is accepted for protocol compatibility, but the backend
+does not automatically submit transcripts or call the NPC generator from STT.
+Godot owns the user-facing transcript mode and, when configured for auto-send,
+routes the final edited text through the same `player.text` event as the Send
+button. `audio.stop` accepts an optional `reason`.
 
 The canonical state set is `DISCONNECTED`, `CONNECTING`, `READY`, `LISTENING`,
 `TRANSCRIBING`, `GENERATING`, `SPEAKING`, and `ERROR`. Text turns use:
