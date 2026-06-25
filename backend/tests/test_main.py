@@ -29,6 +29,7 @@ class FakeOllamaClient:
 class NpcRoutingTests(unittest.TestCase):
     def setUp(self) -> None:
         main.session_store._sessions.clear()
+        self.client = TestClient(main.app)
         self.original_client = main.ollama_client
         self.fake_client = FakeOllamaClient()
         main.ollama_client = self.fake_client
@@ -91,6 +92,18 @@ class NpcRoutingTests(unittest.TestCase):
         response = asyncio.run(main.npc_chat(request))
         self.assertEqual(response.npc_id, "aiko")
         self.assertEqual(response.npc_text, "Profile-specific test reply.")
+
+    def test_http_npc_chat_route_remains_supported(self) -> None:
+        response = self.client.post(
+            "/npc/chat",
+            json={
+                "session_id": "http_test:haru",
+                "npc_id": "haru",
+                "player_message": "Hello over HTTP",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["dialogue"], "Profile-specific test reply.")
 
     def test_session_keys_are_forced_into_npc_namespaces(self) -> None:
         self.assertEqual(

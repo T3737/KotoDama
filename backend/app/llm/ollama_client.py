@@ -19,6 +19,14 @@ class OllamaClient:
         self.model = model
         self.timeout = timeout
 
+    async def is_available(self) -> bool:
+        try:
+            async with httpx.AsyncClient(timeout=min(self.timeout, 2.0)) as client:
+                response = await client.get(f"{self.base_url}/api/tags")
+                return response.is_success
+        except httpx.HTTPError:
+            return False
+
     async def chat(self, messages: list[dict[str, str]]) -> str:
         payload: dict[str, Any] = {
             "model": self.model,
