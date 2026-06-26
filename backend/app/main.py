@@ -7,6 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, model_validator
 
 from app.api.speech import router as speech_router
+from app.api.tts import router as tts_router
 from app.api.voice_session import router as voice_session_router
 from app.game.npc_profiles import NpcProfileError, load_npc_profile
 from app.game.session_store import SessionStore
@@ -20,6 +21,13 @@ from app.orchestration.npc_orchestrator import (
     validated_private_history,
 )
 from app.speech.stt_service import create_stt_service, get_stt_mode, get_stt_readiness
+from app.speech.tts_service import (
+    TemporaryTTSAudioStore,
+    TTSUnavailableError,
+    create_tts_service,
+    tts_debug_enabled,
+    tts_startup_summary,
+)
 from app.speech.vad_service import VADUnavailableError, create_vad_service
 
 
@@ -28,18 +36,24 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="KotoDama NPC AI Backend")
 app.include_router(speech_router)
+app.include_router(tts_router)
 app.include_router(voice_session_router)
 session_store = SessionStore(max_messages=12)
 ollama_client = OllamaClient()
 npc_orchestrator = NpcOrchestrator(session_store)
 stt_service = create_stt_service()
 vad_service = create_vad_service()
+tts_service = create_tts_service()
+tts_audio_store = TemporaryTTSAudioStore()
 app.state.ollama_client = ollama_client
 app.state.npc_orchestrator = npc_orchestrator
 app.state.stt_service = stt_service
 app.state.stt_service_factory = lambda: app.state.stt_service
 app.state.vad_service = vad_service
 app.state.vad_service_factory = lambda: app.state.vad_service
+app.state.tts_service = tts_service
+app.state.tts_service_factory = lambda: app.state.tts_service
+app.state.tts_audio_store = tts_audio_store
 
 
 @app.on_event("startup")
@@ -62,6 +76,41 @@ async def preload_vad_model() -> None:
     except VADUnavailableError as exc:
         # Automatic stopping is optional; manual Stop remains available.
         logger.warning("vad_preload_unavailable error=%s", exc)
+
+
+@app.on_event("startup")
+async def preload_tts_model() -> None:
+    if os.getenv("TTS_PRELOAD", "false").strip().lower() not in {"1", "true", "yes"}:
+        return
+    try:
+        await run_in_threadpool(app.state.tts_service.prepare)
+    except TTSUnavailableError as exc:
+        # NPC voice remains optional; text-only dialogue continues.
+        logger.warning("tts_preload_unavailable error=%s", exc)
+    except Exception as exc:
+        logger.error("tts_preload_failed error=%s", exc)
+
+
+@app.on_event("startup")
+async def log_tts_configuration() -> None:
+    if not tts_debug_enabled():
+        return
+    summary = tts_startup_summary(app.state.tts_service)
+    logger.info(
+        "tts_startup mode=%s tts_model_path=%s tts_config_path=%s "
+        "tts_model_exists=%s tts_config_exists=%s tts_state=%s",
+        summary["mode"],
+        summary["model_path"],
+        summary["config_path"],
+        summary["model_exists"],
+        summary["config_exists"],
+        summary["state"],
+    )
+
+
+@app.on_event("shutdown")
+async def cleanup_tts_audio() -> None:
+    app.state.tts_audio_store.clear()
 
 
 class NpcChatRequest(BaseModel):
@@ -116,6 +165,7 @@ async def ready() -> dict[str, Any]:
         "stt_mode": get_stt_mode(),
         "stt": get_stt_readiness(),
         "vad": app.state.vad_service.readiness(),
+        "tts": app.state.tts_service.readiness(),
         "voice_websocket": True,
     }
 

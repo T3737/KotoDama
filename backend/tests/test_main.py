@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -13,10 +14,19 @@ from fastapi.testclient import TestClient
 
 from app.game.npc_profiles import NpcProfileError, load_npc_profile
 from app import main
+from app.orchestration.npc_orchestrator import clean_npc_dialogue
 from app.speech.stt_service import (
     FasterWhisperSTTService,
     STTUnavailableError,
     clear_stt_service_cache,
+)
+from app.speech.tts_service import (
+    MockTTSService,
+    PiperTTSService,
+    TTSConfigMissingError,
+    TTSModelMissingError,
+    clear_tts_service_cache,
+    create_tts_service,
 )
 
 
@@ -46,6 +56,58 @@ class NpcRoutingTests(unittest.TestCase):
         emi = load_npc_profile("emi")
         self.assertNotEqual(aiko["role"], haru["role"])
         self.assertNotEqual(haru["role"], emi["role"])
+
+    def test_neutral_default_profile_does_not_force_carrots(self) -> None:
+        profile = load_npc_profile("default_npc")
+        prompt = main._build_system_prompt(
+            main.NpcChatRequest(
+                npc_id="default_npc",
+                session_id="default_save:default_npc",
+                player_message="Hello",
+            ),
+            profile,
+        )
+        self.assertNotIn("carrot", json.dumps(profile).lower())
+        self.assertNotIn("carrot", prompt.lower())
+        self.assertIn("Do not advertise", prompt)
+
+    def test_carrot_merchant_profile_remains_available(self) -> None:
+        profile = load_npc_profile("carrot_merchant")
+        prompt = main._build_system_prompt(
+            main.NpcChatRequest(
+                npc_id="carrot_merchant",
+                session_id="default_save:carrot_merchant",
+                player_message="What do you sell?",
+            ),
+            profile,
+        )
+        self.assertEqual(profile["role"], "vegetable merchant")
+        self.assertIn("carrots", json.dumps(profile).lower())
+        self.assertIn("should not redirect every conversation to carrots", prompt)
+
+    def test_blank_optional_profile_fields_are_omitted_from_prompt(self) -> None:
+        profile = load_npc_profile("default_npc")
+        prompt = main._build_system_prompt(
+            main.NpcChatRequest(
+                npc_id="default_npc",
+                session_id="default_save:default_npc",
+                player_message="Hello",
+            ),
+            profile,
+        )
+        self.assertNotIn("Setting:", prompt)
+        self.assertNotIn("Current context:", prompt)
+        self.assertNotIn("Conversation goal:", prompt)
+
+    def test_json_model_output_is_presented_as_plain_text(self) -> None:
+        self.assertEqual(
+            clean_npc_dialogue('{"dialogue":"Hello there.\\\\nHow are you?"}'),
+            "Hello there.\nHow are you?",
+        )
+        self.assertEqual(
+            clean_npc_dialogue("```json\n{\"text\":\"Plain reply.\"}\n```"),
+            "Plain reply.",
+        )
 
     def test_unknown_profile_is_rejected(self) -> None:
         with self.assertRaises(NpcProfileError):
@@ -221,6 +283,55 @@ class SpeechTranscriptionTests(unittest.TestCase):
                 with self.assertRaises(STTUnavailableError) as context:
                     service.transcribe(Path(audio_file.name))
         self.assertIn("requirements-stt.txt", str(context.exception))
+
+
+class TextToSpeechTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.original_mode = os.environ.get("TTS_MODE")
+        clear_tts_service_cache()
+
+    def tearDown(self) -> None:
+        if self.original_mode is None:
+            os.environ.pop("TTS_MODE", None)
+        else:
+            os.environ["TTS_MODE"] = self.original_mode
+        clear_tts_service_cache()
+
+    def test_mock_tts_synthesizes_wav(self) -> None:
+        result = MockTTSService().synthesize("Hello there.")
+        self.assertEqual(result.mode, "mock")
+        self.assertGreater(result.duration_ms, 0)
+        with wave.open(io.BytesIO(result.audio_bytes), "rb") as wav_file:
+            self.assertEqual(wav_file.getnchannels(), 1)
+            self.assertEqual(wav_file.getsampwidth(), 2)
+            self.assertGreater(wav_file.getnframes(), 0)
+
+    def test_local_tts_missing_model_is_clear(self) -> None:
+        service = PiperTTSService(
+            model_path="missing_voice.onnx",
+            config_path="missing_voice.onnx.json",
+        )
+        readiness = service.readiness()
+        self.assertEqual(readiness["state"], "error")
+        self.assertIn("not installed", readiness["error"])
+        with self.assertRaises(TTSModelMissingError):
+            service.prepare()
+
+    def test_local_tts_missing_config_is_clear(self) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".onnx") as model_file:
+            service = PiperTTSService(
+                model_path=model_file.name,
+                config_path="missing_voice.onnx.json",
+            )
+            with self.assertRaises(TTSConfigMissingError):
+                service.prepare()
+
+    def test_tts_service_cache_reuses_instance(self) -> None:
+        os.environ["TTS_MODE"] = "mock"
+        clear_tts_service_cache()
+        first = create_tts_service()
+        second = create_tts_service()
+        self.assertIs(first, second)
 
 
 if __name__ == "__main__":

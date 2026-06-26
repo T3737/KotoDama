@@ -16,6 +16,12 @@ ollama pull llama3.2
 uvicorn app.main:app --reload
 ```
 
+Optional local TTS support uses Piper and is installed separately:
+
+```powershell
+python -m pip install -r requirements-tts.txt
+```
+
 The service listens at `http://127.0.0.1:8000`. Ollama is expected at
 `http://localhost:11434`.
 
@@ -89,7 +95,7 @@ Client text events are `session.start`, `player.text`, `audio.start`,
 `audio.stop`, `session.close`, and `ping`. Between `audio.start` and
 `audio.stop`, binary WebSocket packets contain raw microphone PCM. Server
 events include `audio.ready`, `audio.received`, and `transcript.final` in
-addition to the existing session, NPC text, error, and pong events.
+addition to the existing session, NPC text, NPC audio, error, and pong events.
 
 The transport audio is mono signed PCM16 little-endian (`pcm_s16le`) at the
 exact sample rate declared by Godot, normally 48000 Hz. Godot averages stereo
@@ -125,6 +131,24 @@ The canonical state set is `DISCONNECTED`, `CONNECTING`, `READY`, `LISTENING`,
 CONNECTING -> READY -> GENERATING -> READY
 ```
 
+When TTS is enabled and synthesis succeeds, text turns use:
+
+```text
+READY -> GENERATING -> SPEAKING -> READY
+```
+
+The server emits `npc.text.final` before TTS generation, then emits
+`npc.audio.ready` with a short-lived `audio_id` when a complete WAV is ready.
+The client fetches it over localhost:
+
+```text
+GET http://127.0.0.1:8000/tts/audio/{audio_id}
+```
+
+After playback finishes or is stopped, the client sends `npc.audio.finished`.
+The server then returns the session to `READY`. The WAV endpoint is one-shot;
+expired or already retrieved IDs return `tts_audio_not_found`.
+
 Manual audio turns use:
 
 ```text
@@ -136,6 +160,81 @@ failure emits a non-fatal error and returns the session to `READY`; `ERROR` is
 reserved for unrecoverable session failures. Each WebSocket owns its lifecycle
 and turn lock, while both WebSocket and `/npc/chat` delegate to the same NPC
 orchestrator and NPC-namespaced memory store.
+
+## Local TTS
+
+TTS is optional and disabled by default:
+
+```powershell
+$env:TTS_MODE = "disabled"
+```
+
+Mock mode returns a small generated WAV tone for automated tests:
+
+```powershell
+$env:TTS_MODE = "mock"
+```
+
+Local mode uses Piper with one configured voice:
+
+```powershell
+$env:TTS_MODE = "local"
+$env:TTS_VOICE_MODEL = "models/tts/voice_name.onnx"
+$env:TTS_VOICE_CONFIG = "models/tts/voice_name.onnx.json"
+$env:TTS_DEBUG = "true"
+```
+
+Paths may be absolute or relative to the repository/backend. Model binaries are
+not tracked by Git; see `backend/models/tts/README.md`.
+
+Example backend startup from PowerShell:
+
+```powershell
+cd C:\path\to\koto_dama\backend
+..\.venv\Scripts\Activate.ps1
+
+$env:STT_MODE = "local"
+$env:TTS_MODE = "local"
+$env:TTS_VOICE_MODEL = "models/tts/voice_name.onnx"
+$env:TTS_VOICE_CONFIG = "models/tts/voice_name.onnx.json"
+$env:TTS_DEBUG = "true"
+
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Check voice files from the `backend` directory:
+
+```powershell
+Get-ChildItem .\models\tts -Recurse
+```
+
+Or from the repository root:
+
+```powershell
+Get-ChildItem .\backend\models\tts -Recurse
+```
+
+`/ready` reports:
+
+```json
+{
+  "tts": {
+    "mode": "local",
+    "state": "ready",
+    "voice": "english_voice"
+  }
+}
+```
+
+Readiness states are `disabled`, `not_loaded`, `loading`, `ready`, and
+`error`. Missing Piper, model, or config files do not fail `/health` or crash
+startup. The backend emits a TTS-specific warning and keeps text-only dialogue
+usable.
+
+With `TTS_DEBUG=true`, startup logs a concise TTS configuration summary, each
+NPC text response logs its character count, TTS synthesis logs start/complete
+or failure, and `/tts/audio/{audio_id}` logs request/return/missing status.
+Conversation history and secrets are not logged.
 
 Manual WebSocket test (with any WebSocket client): connect to the URL above,
 send `session.start`, wait for `session.ready`, then send the same envelope with
@@ -442,7 +541,8 @@ and clean close.
 ## Current Fallbacks And Deferred Work
 
 Typed `player.text`, `/npc/chat`, `/speech/transcribe`, and the existing
-`AudioEffectRecord` WAV upload remain available alongside streaming. Automatic
-VAD, continuous listening, partial/streaming STT, TTS, interruption/barge-in,
-pronunciation scoring, model training, LoRA, and database persistence are not
-implemented.
+`AudioEffectRecord` WAV upload remain available alongside streaming and
+complete-response TTS. Automatic VAD and complete WAV playback are implemented.
+Continuous listening, partial/streaming STT, streaming TTS, interruption or
+barge-in, pronunciation scoring, model training, LoRA, and database persistence
+are not implemented.

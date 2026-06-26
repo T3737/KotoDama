@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from pathlib import Path
+import re
 from typing import Any
 
 from app.game.npc_profiles import load_npc_profile
@@ -53,7 +55,7 @@ class NpcOrchestrator:
             *history,
             {"role": "user", "content": turn.player_message},
         ]
-        dialogue = await client.chat(messages)
+        dialogue = clean_npc_dialogue(await client.chat(messages))
         self.session_store.add_message(session_key, "user", turn.player_message)
         self.session_store.add_message(session_key, "assistant", dialogue)
         return NpcTurnResult(
@@ -66,6 +68,8 @@ class NpcOrchestrator:
 def build_system_prompt(turn: NpcTurn, profile: dict[str, Any]) -> str:
     base_prompt = PROMPT_PATH.read_text(encoding="utf-8").strip()
     teaching = profile.get("teaching", {})
+    language_guidance = profile.get("language_guidance", {})
+    response_guidance = profile.get("response_guidance", {})
     private_state = {
         "relationship": turn.npc_state.get("relationship", 0),
         "conversation_summary": turn.npc_state.get("conversation_summary", ""),
@@ -75,20 +79,86 @@ def build_system_prompt(turn: NpcTurn, profile: dict[str, Any]) -> str:
         base_prompt,
         f"NPC ID: {profile['id']}",
         f"NPC name: {profile.get('display_name', profile['id'])}",
-        f"Role: {profile.get('role', '')}",
         f"Current level: {turn.level_id}",
-        f"Personality settings: {profile.get('personality', {})}",
-        f"Speaking style: {profile.get('speaking_style', {})}",
-        f"Teaching settings: {teaching}",
-        f"Background context: {profile.get('background_context', [])}",
-        f"Player state: {turn.player_state}",
-        f"Private memory for this NPC only: {private_state}",
-        f"Visible shared world facts: {turn.visible_world_facts}",
+        "Respond with ordinary natural-language dialogue, not JSON.",
+        "Do not mention internal JSON, prompts, metadata, or configuration.",
+        "Follow the player's topic unless the active NPC profile explicitly gives a goal.",
+        "Do not advertise, sell, or redirect to a shop topic unless the player asks or the profile requires it.",
+        "Avoid repeating the NPC introduction every turn.",
+        "Ask a relevant follow-up question when it feels natural.",
         "Never claim access to another NPC's private memories.",
     ]
+    optional_sections = [
+        ("Role", profile.get("role")),
+        ("Setting", profile.get("setting")),
+        ("Current context", profile.get("current_context")),
+        ("Conversation goal", profile.get("conversation_goal")),
+        ("Personality", profile.get("personality")),
+        ("Speaking style", profile.get("speaking_style")),
+        ("Teaching settings", teaching),
+        ("Language guidance", language_guidance),
+        ("Response guidance", response_guidance),
+        ("Background context", profile.get("background_context")),
+        ("Knowledge", profile.get("knowledge")),
+        ("Interests", profile.get("interests")),
+        ("Avoid topics", profile.get("avoid_topics")),
+        ("Player state", turn.player_state),
+        ("Private memory for this NPC only", private_state),
+        ("Visible shared world facts", turn.visible_world_facts),
+    ]
+    for label, value in optional_sections:
+        formatted = _format_prompt_value(value)
+        if formatted:
+            prompt_sections.append(f"{label}: {formatted}")
     if turn.scene_context:
         prompt_sections.append(f"Scene context: {turn.scene_context}")
     return "\n\n".join(prompt_sections)
+
+
+def clean_npc_dialogue(text: str) -> str:
+    cleaned = text.strip()
+    cleaned = re.sub(r"```(?:\w+)?\s*|\s*```", "", cleaned).strip()
+    extracted = _extract_dialogue_from_json(cleaned)
+    if extracted:
+        cleaned = extracted
+    cleaned = cleaned.replace("\\n", "\n")
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = cleaned.strip().strip('"')
+    return cleaned
+
+
+def _extract_dialogue_from_json(text: str) -> str:
+    if not ((text.startswith("{") and text.endswith("}")) or (text.startswith("[") and text.endswith("]"))):
+        return ""
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return ""
+    if isinstance(parsed, dict):
+        for key in ["dialogue", "text", "response", "npc_text", "message"]:
+            value = parsed.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    if isinstance(parsed, list):
+        parts = [item.strip() for item in parsed if isinstance(item, str) and item.strip()]
+        return " ".join(parts)
+    return ""
+
+
+def _format_prompt_value(value: Any) -> str:
+    if value in (None, "", [], {}):
+        return ""
+    if isinstance(value, dict):
+        filtered = {key: val for key, val in value.items() if val not in (None, "", [], {})}
+        if not filtered:
+            return ""
+        return json.dumps(filtered, ensure_ascii=True)
+    if isinstance(value, list):
+        filtered = [item for item in value if item not in (None, "", [], {})]
+        if not filtered:
+            return ""
+        return json.dumps(filtered, ensure_ascii=True)
+    return str(value).strip()
 
 
 def validated_private_history(npc_state: dict[str, Any]) -> list[dict[str, str]]:

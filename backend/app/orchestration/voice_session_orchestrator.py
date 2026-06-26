@@ -21,6 +21,7 @@ from app.orchestration.vad_turn import VADOutcome, VADTurnDetector
 from app.schemas.voice_events import (
     AudioStartEvent,
     AudioStopEvent,
+    NpcAudioFinishedEvent,
     PlayerTextEvent,
     ServerEvent,
     SessionStartEvent,
@@ -34,6 +35,15 @@ from app.speech.stt_service import (
     SpeechToTextService,
     create_stt_service,
 )
+from app.speech.tts_service import (
+    TTSError,
+    TTSUnavailableError,
+    TemporaryTTSAudioStore,
+    TextToSpeechService,
+    create_tts_service,
+    sanitize_tts_text,
+    tts_debug_enabled,
+)
 from app.speech.vad_service import (
     VADService,
     VADUnavailableError,
@@ -45,6 +55,7 @@ logger = logging.getLogger(__name__)
 EventSender = Callable[[ServerEvent], Awaitable[None]]
 STTFactory = Callable[[], SpeechToTextService]
 VADFactory = Callable[[], VADService]
+TTSFactory = Callable[[], TextToSpeechService]
 
 DEFAULT_MAX_AUDIO_SECONDS = 20.0
 DEFAULT_MAX_AUDIO_BYTES = 4 * 1024 * 1024
@@ -66,12 +77,16 @@ class VoiceSessionOrchestrator:
         send_event: EventSender,
         stt_factory: STTFactory = create_stt_service,
         vad_factory: VADFactory = create_vad_service,
+        tts_factory: TTSFactory = create_tts_service,
+        tts_audio_store: TemporaryTTSAudioStore | None = None,
     ) -> None:
         self._npc_orchestrator = npc_orchestrator
         self._ollama_client = ollama_client
         self._send_event = send_event
         self._stt_factory = stt_factory
         self._vad_factory = vad_factory
+        self._tts_factory = tts_factory
+        self._tts_audio_store = tts_audio_store or TemporaryTTSAudioStore()
         self._state = ConversationStateMachine()
         self._start: SessionStartEvent | None = None
         self._turn_active = False
@@ -79,6 +94,7 @@ class VoiceSessionOrchestrator:
         self._vad_detector: VADTurnDetector | None = None
         self._discard_late_audio = False
         self._late_frame_logged = False
+        self._pending_audio_id = ""
         self._max_audio_seconds = float(
             os.getenv("VOICE_MAX_TURN_SECONDS", str(DEFAULT_MAX_AUDIO_SECONDS))
         )
@@ -169,6 +185,13 @@ class VoiceSessionOrchestrator:
                     in_reply_to=event.event_id,
                 )
             )
+            if tts_debug_enabled():
+                logger.info(
+                    "npc_text_final session=%s characters=%d",
+                    self.session_id,
+                    len(result.dialogue),
+                )
+            await self._start_npc_audio(result.dialogue, event.event_id)
             logger.info(
                 "npc_generation_completed session_id=%s npc_id=%s generation_ms=%.1f total_ms=%.1f",
                 self.session_id,
@@ -207,9 +230,30 @@ class VoiceSessionOrchestrator:
                 )
             )
         finally:
-            self._turn_active = False
             if self.state == ConversationState.GENERATING:
                 await self._transition(ConversationState.READY)
+            if self.state != ConversationState.SPEAKING:
+                self._turn_active = False
+
+    async def finish_npc_audio(self, event: NpcAudioFinishedEvent) -> None:
+        if self.state != ConversationState.SPEAKING:
+            return
+        if self._pending_audio_id and event.payload.audio_id != self._pending_audio_id:
+            await self._send_event(
+                server_event(
+                    "error",
+                    self.session_id,
+                    code="tts_audio_mismatch",
+                    message="NPC audio completion did not match the active response.",
+                    fatal=False,
+                    in_reply_to=event.event_id,
+                )
+            )
+            return
+        self._pending_audio_id = ""
+        self._tts_audio_store.clear_session(self.session_id)
+        self._turn_active = False
+        await self._transition(ConversationState.READY)
 
     async def start_audio(self, event: AudioStartEvent) -> None:
         if self._start is None or self.state != ConversationState.READY:
@@ -529,6 +573,9 @@ class VoiceSessionOrchestrator:
 
     async def close(self) -> None:
         self._clear_audio_turn()
+        if self.session_id:
+            self._tts_audio_store.clear_session(self.session_id)
+        self._pending_audio_id = ""
         self._discard_late_audio = False
         if self.state != ConversationState.DISCONNECTED:
             previous, current = self._state.transition(ConversationState.DISCONNECTED)
@@ -557,6 +604,100 @@ class VoiceSessionOrchestrator:
         )
         if self.state in {ConversationState.LISTENING, ConversationState.TRANSCRIBING}:
             await self._transition(ConversationState.READY)
+
+    async def _start_npc_audio(self, dialogue: str, in_reply_to: str) -> None:
+        speakable_text = sanitize_tts_text(dialogue)
+        if not speakable_text:
+            await self._send_tts_warning(
+                "tts_empty_text",
+                "NPC voice is unavailable. Text response shown instead.",
+                in_reply_to,
+            )
+            return
+        tts_service = self._tts_factory()
+        if tts_service.readiness().get("mode") == "disabled":
+            return
+        try:
+            if tts_debug_enabled():
+                logger.info(
+                    "tts_synthesis_start session=%s characters=%d",
+                    self.session_id,
+                    len(speakable_text),
+                )
+            result = await run_in_threadpool(tts_service.synthesize, speakable_text)
+        except TTSUnavailableError as exc:
+            self._log_tts_failure(exc)
+            await self._send_tts_warning(exc.code, str(exc), in_reply_to)
+            return
+        except TTSError as exc:
+            self._log_tts_failure(exc)
+            await self._send_tts_warning(exc.code, str(exc), in_reply_to)
+            return
+        except Exception:
+            logger.exception("tts_synthesis_error session_id=%s", self.session_id)
+            if tts_debug_enabled():
+                logger.info(
+                    "tts_synthesis_failed session=%s error_type=%s error=%s",
+                    self.session_id,
+                    "Exception",
+                    "NPC voice synthesis failed unexpectedly.",
+                )
+            await self._send_tts_warning(
+                "tts_failed",
+                "NPC voice is unavailable. Text response shown instead.",
+                in_reply_to,
+            )
+            return
+        entry = self._tts_audio_store.put(
+            self.session_id,
+            result.audio_bytes,
+            result.duration_ms,
+        )
+        if tts_debug_enabled():
+            logger.info(
+                "tts_synthesis_complete session=%s audio_id=%s bytes=%d duration_ms=%d",
+                self.session_id,
+                entry.audio_id,
+                len(result.audio_bytes),
+                result.duration_ms,
+            )
+        self._pending_audio_id = entry.audio_id
+        await self._transition(ConversationState.SPEAKING)
+        await self._send_event(
+            server_event(
+                "npc.audio.ready",
+                self.session_id,
+                audio_id=entry.audio_id,
+                format="wav",
+                duration_ms=result.duration_ms,
+                mode=result.mode,
+                voice=result.voice,
+                in_reply_to=in_reply_to,
+            )
+        )
+
+    async def _send_tts_warning(self, code: str, message: str, in_reply_to: str) -> None:
+        await self._send_event(
+            server_event(
+                "error",
+                self.session_id,
+                code=code,
+                message=message,
+                fatal=False,
+                tts=True,
+                in_reply_to=in_reply_to,
+            )
+        )
+
+    def _log_tts_failure(self, exc: Exception) -> None:
+        if not tts_debug_enabled():
+            return
+        logger.info(
+            "tts_synthesis_failed session=%s error_type=%s error=%s",
+            self.session_id,
+            type(exc).__name__,
+            str(exc),
+        )
 
     def _clear_audio_turn(self) -> None:
         if self._audio_turn is not None:

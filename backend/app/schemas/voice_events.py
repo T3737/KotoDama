@@ -39,6 +39,11 @@ class AudioStopPayload(EventModel):
     reason: str = "player_released"
 
 
+class NpcAudioFinishedPayload(EventModel):
+    audio_id: str = Field(min_length=1)
+    cancelled: bool = False
+
+
 class EmptyPayload(EventModel):
     pass
 
@@ -69,6 +74,11 @@ class AudioStopEvent(ClientEventBase):
     payload: AudioStopPayload = Field(default_factory=AudioStopPayload)
 
 
+class NpcAudioFinishedEvent(ClientEventBase):
+    type: Literal["npc.audio.finished"]
+    payload: NpcAudioFinishedPayload
+
+
 class SessionCloseEvent(ClientEventBase):
     type: Literal["session.close"]
     payload: EmptyPayload = Field(default_factory=EmptyPayload)
@@ -84,6 +94,7 @@ ClientEvent = (
     | PlayerTextEvent
     | AudioStartEvent
     | AudioStopEvent
+    | NpcAudioFinishedEvent
     | SessionCloseEvent
     | PingEvent
 )
@@ -92,6 +103,7 @@ CLIENT_EVENT_TYPES = {
     "player.text",
     "audio.start",
     "audio.stop",
+    "npc.audio.finished",
     "session.close",
     "ping",
 }
@@ -114,6 +126,7 @@ class ServerEvent(EventModel):
         "vad.speech_started",
         "vad.speech_ended",
         "transcript.final",
+        "npc.audio.ready",
         "error",
         "pong",
     ]

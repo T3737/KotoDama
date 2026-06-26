@@ -18,6 +18,12 @@ from app.orchestration.conversation_state import (
 )
 from app.orchestration.audio_turn import AudioTurnBuffer
 from app.speech.stt_service import MockSTTService, SpeechToTextService, STTUnavailableError
+from app.speech.tts_service import (
+    MockTTSService,
+    TTSError,
+    TemporaryTTSAudioStore,
+    TextToSpeechService,
+)
 from app.speech.vad_service import VADConfig
 
 
@@ -61,6 +67,22 @@ class UnavailableSTTService(SpeechToTextService):
 class EmptySTTService(SpeechToTextService):
     def transcribe(self, audio_path):
         return ""
+
+
+class FailingTTSService(TextToSpeechService):
+    mode = "mock"
+    voice = "failing"
+
+    def synthesize(self, text: str):
+        raise TTSError("Local voice synthesis failed for test.")
+
+    def readiness(self):
+        return {
+            "mode": self.mode,
+            "state": "ready",
+            "voice": self.voice,
+            "error": None,
+        }
 
 
 class SequenceVADStream:
@@ -122,15 +144,20 @@ class VoiceSessionTests(unittest.TestCase):
         self.original_client = main.app.state.ollama_client
         self.original_stt_factory = main.app.state.stt_service_factory
         self.original_vad_factory = main.app.state.vad_service_factory
+        self.original_tts_factory = main.app.state.tts_service_factory
+        self.original_tts_audio_store = main.app.state.tts_audio_store
         main.app.state.ollama_client = FakeOllamaClient()
         self.stt = InspectingSTTService()
         main.app.state.stt_service_factory = lambda: self.stt
+        main.app.state.tts_audio_store = TemporaryTTSAudioStore()
         self.client = TestClient(main.app)
 
     def tearDown(self) -> None:
         main.app.state.ollama_client = self.original_client
         main.app.state.stt_service_factory = self.original_stt_factory
         main.app.state.vad_service_factory = self.original_vad_factory
+        main.app.state.tts_service_factory = self.original_tts_factory
+        main.app.state.tts_audio_store = self.original_tts_audio_store
 
     def start_session(self, websocket) -> None:
         websocket.send_json(event("session.start", payload={"npc_id": "haru"}))
@@ -141,20 +168,129 @@ class VoiceSessionTests(unittest.TestCase):
         self.assertEqual(state["type"], "state.changed")
         self.assertEqual(state["payload"]["state"], "READY")
 
+    def receive_mock_tts_turn(
+        self, websocket, expected_text: str
+    ) -> tuple[list[dict], str]:
+        responses = [websocket.receive_json() for _ in range(4)]
+        self.assertEqual(responses[0]["type"], "state.changed")
+        self.assertEqual(responses[0]["payload"]["state"], "GENERATING")
+
+        final_events = [
+            response for response in responses if response["type"] == "npc.text.final"
+        ]
+        self.assertEqual(len(final_events), 1)
+        self.assertEqual(final_events[0]["payload"]["text"], expected_text)
+
+        audio_events = [
+            response for response in responses if response["type"] == "npc.audio.ready"
+        ]
+        self.assertEqual(len(audio_events), 1)
+        audio_id = audio_events[0]["payload"]["audio_id"]
+        self.assertTrue(audio_id)
+
+        states = [
+            response["payload"]["state"]
+            for response in responses
+            if response["type"] == "state.changed"
+        ]
+        self.assertIn("SPEAKING", states)
+        self.assertNotIn("READY", states)
+
+        final_index = responses.index(final_events[0])
+        audio_index = responses.index(audio_events[0])
+        self.assertLess(final_index, audio_index)
+        return responses, audio_id
+
     def test_connection_start_and_player_text_round_trip(self) -> None:
+        with self.client.websocket_connect("/voice/session") as websocket:
+            self.start_session(websocket)
+            websocket.send_json(event("player.text", payload={"text": "Hello"}))
+            _responses, audio_id = self.receive_mock_tts_turn(
+                websocket, "Reply to: Hello"
+            )
+
+            websocket.send_json(
+                event("npc.audio.finished", payload={"audio_id": audio_id})
+            )
+            ready = websocket.receive_json()
+            self.assertEqual(ready["type"], "state.changed")
+            self.assertEqual(ready["payload"]["state"], "READY")
+
+    def test_mock_tts_emits_text_before_audio_and_waits_for_finished(self) -> None:
+        main.app.state.tts_service_factory = MockTTSService
         with self.client.websocket_connect("/voice/session") as websocket:
             self.start_session(websocket)
             websocket.send_json(event("player.text", payload={"text": "Hello"}))
             generating = websocket.receive_json()
             final = websocket.receive_json()
-            ready = websocket.receive_json()
+            speaking = websocket.receive_json()
+            audio_ready = websocket.receive_json()
 
-            self.assertEqual(generating["type"], "state.changed")
             self.assertEqual(generating["payload"]["state"], "GENERATING")
             self.assertEqual(final["type"], "npc.text.final")
             self.assertEqual(final["payload"]["text"], "Reply to: Hello")
+            self.assertEqual(speaking["payload"]["state"], "SPEAKING")
+            self.assertEqual(audio_ready["type"], "npc.audio.ready")
+            audio_id = audio_ready["payload"]["audio_id"]
+
+            response = self.client.get(f"/tts/audio/{audio_id}")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers["content-type"], "audio/wav")
+            with wave.open(io.BytesIO(response.content), "rb") as wav_file:
+                self.assertGreater(wav_file.getnframes(), 0)
+
+            second_response = self.client.get(f"/tts/audio/{audio_id}")
+            self.assertEqual(second_response.status_code, 404)
+
+            websocket.send_json(
+                event("npc.audio.finished", payload={"audio_id": audio_id})
+            )
+            ready = websocket.receive_json()
             self.assertEqual(ready["type"], "state.changed")
             self.assertEqual(ready["payload"]["state"], "READY")
+
+    def test_expired_tts_audio_id_returns_not_found(self) -> None:
+        main.app.state.tts_audio_store = TemporaryTTSAudioStore(ttl_seconds=0)
+        entry = main.app.state.tts_audio_store.put("test_player:haru", b"RIFF", 1)
+        response = self.client.get(f"/tts/audio/{entry.audio_id}")
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["detail"]["code"], "tts_audio_not_found")
+
+    def test_voice_transcript_turn_uses_same_tts_path_after_submission(self) -> None:
+        main.app.state.tts_service_factory = MockTTSService
+        with self.client.websocket_connect("/voice/session") as websocket:
+            self.start_session(websocket)
+            self.start_audio(websocket)
+            websocket.send_bytes(b"\x01\x00" * 400)
+            websocket.send_json(event("audio.stop"))
+            transcript_responses = [websocket.receive_json() for _ in range(4)]
+            self.assertEqual(transcript_responses[2]["type"], "transcript.final")
+            self.assertEqual(transcript_responses[3]["payload"]["state"], "READY")
+
+            websocket.send_json(
+                event(
+                    "player.text",
+                    payload={"text": transcript_responses[2]["payload"]["text"]},
+                )
+            )
+            responses = [websocket.receive_json() for _ in range(4)]
+            self.assertEqual(
+                [response["type"] for response in responses],
+                ["state.changed", "npc.text.final", "state.changed", "npc.audio.ready"],
+            )
+
+    def test_tts_failure_keeps_text_and_returns_ready(self) -> None:
+        main.app.state.tts_service_factory = FailingTTSService
+        with self.client.websocket_connect("/voice/session") as websocket:
+            self.start_session(websocket)
+            websocket.send_json(event("player.text", payload={"text": "Hello"}))
+            responses = [websocket.receive_json() for _ in range(4)]
+        self.assertEqual(
+            [response["type"] for response in responses],
+            ["state.changed", "npc.text.final", "error", "state.changed"],
+        )
+        self.assertEqual(responses[2]["payload"]["code"], "tts_failed")
+        self.assertEqual(responses[3]["payload"]["state"], "READY")
 
     def test_readiness_reports_session_capabilities(self) -> None:
         response = self.client.get("/ready")
@@ -167,6 +303,8 @@ class VoiceSessionTests(unittest.TestCase):
         self.assertIn(body["vad"]["state"], {"not_loaded", "ready", "error"})
         self.assertEqual(body["vad"]["backend"], "silero_onnx")
         self.assertEqual(body["vad"]["sample_rate"], 16000)
+        self.assertEqual(body["tts"]["mode"], "mock")
+        self.assertEqual(body["tts"]["state"], "ready")
         self.assertTrue(body["voice_websocket"])
 
     def test_malformed_json_returns_structured_error(self) -> None:
@@ -479,24 +617,47 @@ class VoiceSessionTests(unittest.TestCase):
             self.assertEqual(response["payload"]["code"], "session_not_started")
 
     def test_overlapping_player_turn_is_rejected(self) -> None:
+        main.app.state.tts_service_factory = MockTTSService
         main.app.state.ollama_client = SlowOllamaClient()
         with self.client.websocket_connect("/voice/session") as websocket:
             self.start_session(websocket)
             websocket.send_json(event("player.text", payload={"text": "First"}))
             websocket.send_json(event("player.text", payload={"text": "Second"}))
-            responses = [websocket.receive_json() for _ in range(4)]
+            responses = [websocket.receive_json() for _ in range(5)]
             codes = [
                 response["payload"].get("code")
                 for response in responses
                 if response["type"] == "error"
             ]
             self.assertIn("turn_in_progress", codes)
+
+            final_events = [
+                response for response in responses if response["type"] == "npc.text.final"
+            ]
+            self.assertEqual(len(final_events), 1)
+            self.assertEqual(final_events[0]["payload"]["text"], "Slow reply to: First")
+
+            audio_events = [
+                response for response in responses if response["type"] == "npc.audio.ready"
+            ]
+            self.assertEqual(len(audio_events), 1)
+            audio_id = audio_events[0]["payload"]["audio_id"]
+
             states = [
                 response["payload"]["state"]
                 for response in responses
                 if response["type"] == "state.changed"
             ]
-            self.assertEqual(states, ["GENERATING", "READY"])
+            self.assertEqual(states.count("GENERATING"), 1)
+            self.assertIn("SPEAKING", states)
+            self.assertNotIn("READY", states)
+
+            websocket.send_json(
+                event("npc.audio.finished", payload={"audio_id": audio_id})
+            )
+            ready = websocket.receive_json()
+            self.assertEqual(ready["type"], "state.changed")
+            self.assertEqual(ready["payload"]["state"], "READY")
 
     def test_ping_and_clean_disconnect(self) -> None:
         with self.client.websocket_connect("/voice/session") as websocket:

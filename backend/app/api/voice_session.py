@@ -17,6 +17,7 @@ from app.schemas.voice_events import (
     AudioStartEvent,
     AudioStopEvent,
     CLIENT_EVENT_TYPES,
+    NpcAudioFinishedEvent,
     PingEvent,
     PlayerTextEvent,
     ServerEvent,
@@ -126,6 +127,8 @@ async def voice_session(websocket: WebSocket) -> None:
                     send,
                     websocket.app.state.stt_service_factory,
                     websocket.app.state.vad_service_factory,
+                    websocket.app.state.tts_service_factory,
+                    websocket.app.state.tts_audio_store,
                 )
                 try:
                     await session.open(event)
@@ -183,6 +186,8 @@ async def voice_session(websocket: WebSocket) -> None:
                     await session.stop_audio(event)
                 except AudioTurnError as exc:
                     await send_error(send, session, exc.code, str(exc), event.event_id)
+            elif isinstance(event, NpcAudioFinishedEvent):
+                await session.finish_npc_audio(event)
     except WebSocketDisconnect:
         logger.info("voice_websocket_disconnected session_id=%s", session.session_id if session else "")
     finally:
