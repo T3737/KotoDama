@@ -13,6 +13,7 @@ signal audio_auto_stopped(payload: Dictionary)
 signal vad_speech_started(payload: Dictionary)
 signal vad_speech_ended(payload: Dictionary)
 signal transcript_final(payload: Dictionary)
+signal npc_audio_ready(payload: Dictionary)
 signal session_error(code: String, message: String, fatal: bool)
 signal voice_error(code: String, message: String, fatal: bool)
 signal disconnected
@@ -20,6 +21,7 @@ signal disconnected
 @export var endpoint := "ws://127.0.0.1:8000/voice/session"
 @export var connect_timeout_seconds := 3.0
 @export var ping_interval_seconds := 10.0
+@export var auto_send_transcript := false
 
 var _socket: WebSocketPeer
 var _session_id := ""
@@ -91,6 +93,17 @@ func send_player_text(text: String) -> bool:
 		return false
 	return _send_event("player.text", {"text": clean_text})
 
+func send_npc_audio_finished(audio_id: String, cancelled: bool = false) -> bool:
+	if not _session_ready or audio_id.strip_edges().is_empty():
+		return false
+	return _send_event(
+		"npc.audio.finished",
+		{
+			"audio_id": audio_id,
+			"cancelled": cancelled,
+		}
+	)
+
 func start_audio(sample_rate: int) -> bool:
 	if not _session_ready or _conversation_state != "READY" or _audio_sending:
 		return false
@@ -100,6 +113,7 @@ func start_audio(sample_rate: int) -> bool:
 			"sample_rate": sample_rate,
 			"channels": 1,
 			"encoding": "pcm_s16le",
+			"auto_send_transcript": auto_send_transcript,
 		}
 	)
 	if _audio_sending:
@@ -209,6 +223,8 @@ func _handle_packet(text: String) -> void:
 			vad_speech_ended.emit(payload)
 		"transcript.final":
 			transcript_final.emit(payload)
+		"npc.audio.ready":
+			npc_audio_ready.emit(payload)
 		"error":
 			_emit_error(
 				str(payload.get("code", "unknown_error")),

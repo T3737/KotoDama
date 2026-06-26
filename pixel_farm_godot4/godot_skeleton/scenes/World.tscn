@@ -157,6 +157,16 @@ theme_override_font_sizes/font_size = 7
 text = "Stop / Transcribe"
 disabled = true
 
+[node name="StopVoiceButton" type="Button" parent="DialogueUI/Panel"]
+visible = false
+offset_left = 242.0
+offset_top = 132.0
+offset_right = 296.0
+offset_bottom = 148.0
+theme_override_font_sizes/font_size = 7
+text = "Stop Voice"
+disabled = true
+
 [node name="AIBackendClient" type="Node" parent="."]
 script = ExtResource("9")
 
@@ -180,3 +190,5 @@ autoplay = true
 bus = &"Record"
 
 [node name="Playback" type="AudioStreamPlayer" parent="AIVoiceRecorder"]
+
+[node name="NPCVoicePlayer" type="AudioStreamPlayer" parent="."]

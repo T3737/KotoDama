@@ -85,8 +85,8 @@ func set_movement_enabled(enabled: bool) -> void:
 	if _movement_enabled == enabled:
 		return
 	_movement_enabled = enabled
+	velocity = Vector2.ZERO
 	if not enabled:
-		velocity = Vector2.ZERO
 		_interact_data = {}
 		_interactable = null
 	print("Player movement %s" % ("enabled" if enabled else "disabled"))

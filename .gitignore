@@ -8,3 +8,11 @@ backend/samples/
 backend/benchmarks/audio/
 backend/**/*_recording.wav
 backend/models/*.onnx
+backend/models/tts/*.onnx
+backend/models/tts/*.onnx.json
+/backend/models/tts/*.wav
+
+# Keep setup documentation in Git
+
+!/backend/models/tts/README.md
+!/backend/models/tts/.gitkeep
